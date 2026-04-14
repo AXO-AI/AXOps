@@ -1,0 +1,35 @@
+name: Bulk Action Dispatch
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'forgeops-dispatch')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse and dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          ACTION=$(echo "$ISSUE_TITLE" | sed -n 's/.*\[FORGEOPS\] \([a-z]*\) \([a-z-]*\) \([a-z]*\).*/\1/p')
+          PROJECT=$(echo "$ISSUE_TITLE" | sed -n 's/.*\[FORGEOPS\] \([a-z]*\) \([a-z-]*\) \([a-z]*\).*/\2/p')
+          ENV=$(echo "$ISSUE_TITLE" | sed -n 's/.*\[FORGEOPS\] \([a-z]*\) \([a-z-]*\) \([a-z]*\).*/\3/p')
+          if [ -z "$ACTION" ] || [ -z "$PROJECT" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "Format: [FORGEOPS] deploy project-name environment"
+            exit 0
+          fi
+          CONFIG=$(cat forgeops-config.json)
+          ORG=$(echo "$CONFIG" | python3 -c "import json,sys;print(json.load(sys.stdin).get('org','askboppana'))")
+          REPOS=$(echo "$CONFIG" | python3 -c "import json,sys;print(' '.join(json.load(sys.stdin).get('projects',{}).get('$PROJECT',{}).get('repos',[])))")
+          gh issue comment "$ISSUE_NUMBER" --body "Dispatching $ACTION to $ENV for: $REPOS"
+          for REPO in $REPOS; do
+            gh workflow run ci.yml --repo "$ORG/$REPO" --ref main -f environment="$ENV" 2>/dev/null || echo "Skip $REPO"
+          done
+          gh issue comment "$ISSUE_NUMBER" --body "Done."
+          gh issue close "$ISSUE_NUMBER"

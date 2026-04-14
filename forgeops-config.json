@@ -1,0 +1,64 @@
+{
+  "version": "2.0",
+  "org": "askboppana",
+  "projects": {
+    "uipath-rpa": {
+      "description": "UiPath RPA Bots",
+      "template": "uipath-rpa",
+      "team": "RPA Team",
+      "pattern": "uipath-*",
+      "sample_repos": ["uipath-bot-001","uipath-bot-002","uipath-bot-003"],
+      "total": 300
+    },
+    "java-backend": {
+      "description": "Java Microservices",
+      "template": "java-webapp",
+      "team": "Backend Team",
+      "pattern": "java-*",
+      "sample_repos": ["java-svc-001","java-svc-002","java-svc-003"],
+      "total": 100
+    },
+    "react-frontend": {
+      "description": "React Web Applications",
+      "template": "javascript-webapp",
+      "team": "Frontend Team",
+      "pattern": "react-*",
+      "sample_repos": ["react-app-001","react-app-002","react-app-003"],
+      "total": 50
+    },
+    "nodejs-api": {
+      "description": "Node.js API Services",
+      "template": "javascript-webapp",
+      "team": "API Team",
+      "pattern": "node-*",
+      "sample_repos": ["node-api-001","node-api-002","node-api-003"],
+      "total": 50
+    },
+    "salesforce": {
+      "description": "Salesforce Apex and Metadata",
+      "template": "salesforce",
+      "team": "Salesforce Team",
+      "pattern": "sfdc-*",
+      "sample_repos": ["sfdc-app-001","sfdc-app-002","sfdc-app-003"],
+      "total": 50
+    },
+    "informatica": {
+      "description": "Informatica ETL Pipelines",
+      "template": "informatica",
+      "team": "Data Team",
+      "pattern": "infa-*",
+      "sample_repos": ["infa-etl-001","infa-etl-002","infa-etl-003"],
+      "total": 50
+    }
+  },
+  "roles": {
+    "admin": {"description": "Full control", "permissions": ["all"]},
+    "release_engineer": {"description": "Promote and deploy", "permissions": ["view_all","create_pr","merge_pr","deploy","promote","rollback"]},
+    "developer": {"description": "Write code, create PRs", "permissions": ["view_own","create_pr_to_int","run_pipeline","view_logs"]},
+    "tech_lead": {"description": "Review and approve", "permissions": ["view_all","approve_pr","merge_pr"]},
+    "qa_team": {"description": "SIT testing", "permissions": ["view_qa","update_jira_sit"]},
+    "uat_team": {"description": "UAT testing", "permissions": ["view_stage","update_jira_uat"]}
+  },
+  "users": {"askboppana": {"role": "admin", "name": "Ashwin Boppana", "email": "askboppana@users.noreply.github.com"}},
+  "email_groups": {"developers":["askboppana"],"qa_team":[],"uat_team":[],"release_engineers":[],"all_stakeholders":["askboppana"]}
+}

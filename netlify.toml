@@ -1,0 +1,72 @@
+[build]
+  base = "."
+  command = "npm install && cd frontend && npm install && npm run build"
+  publish = "frontend/dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Branch deploys
+[context.int]
+  command = "npm install && cd frontend && npm install && npm run build"
+
+[context.int.environment]
+  VITE_DEPLOY_ENV = "INT"
+
+[context.qa]
+  command = "npm install && cd frontend && npm install && npm run build"
+
+[context.qa.environment]
+  VITE_DEPLOY_ENV = "QA"
+
+[context.staging]
+  command = "npm install && cd frontend && npm install && npm run build"
+
+[context.staging.environment]
+  VITE_DEPLOY_ENV = "STAGE"
+
+[[redirects]]
+  from = "/api/jira/*"
+  to = "/.netlify/functions/jira"
+  status = 200
+
+[[redirects]]
+  from = "/api/github/*"
+  to = "/.netlify/functions/github-api"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/*"
+  to = "/.netlify/functions/ai"
+  status = 200
+
+[[redirects]]
+  from = "/api/teams/*"
+  to = "/.netlify/functions/teams"
+  status = 200
+
+[[redirects]]
+  from = "/api/discovery/*"
+  to = "/.netlify/functions/discovery"
+  status = 200
+
+[[redirects]]
+  from = "/api/sca/*"
+  to = "/.netlify/functions/sca"
+  status = 200
+
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200
+
+[[redirects]]
+  from = "/api/support/*"
+  to = "/.netlify/functions/support"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

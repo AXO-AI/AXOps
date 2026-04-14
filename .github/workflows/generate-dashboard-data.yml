@@ -1,0 +1,143 @@
+name: Generate Dashboard Data
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build dashboard data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY || 'SCRUM' }}
+        run: |
+          ORG="${GITHUB_REPOSITORY_OWNER}"
+          SELF="${GITHUB_REPOSITORY#*/}"
+
+          python3 << 'PYSCRIPT'
+          import json, urllib.request, urllib.parse, os, time
+
+          org = os.environ.get("ORG", "")
+          self_repo = os.environ.get("SELF", "")
+          token = os.environ.get("GITHUB_TOKEN", "")
+
+          headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+
+          all_repos = []
+          page = 1
+          while page <= 10:
+              url = f"https://api.github.com/users/{org}/repos?per_page=100&page={page}&sort=updated"
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  resp = urllib.request.urlopen(req)
+                  repos = json.loads(resp.read().decode())
+              except Exception as e:
+                  print(f"Error fetching page {page}: {e}")
+                  break
+              if not repos:
+                  break
+              for r in repos:
+                  if r["name"] == self_repo:
+                      continue
+                  all_repos.append({
+                      "name": r["name"],
+                      "updated": r.get("updated_at", ""),
+                      "language": r.get("language") or "",
+                      "default_branch": r.get("default_branch", "main"),
+                      "private": r.get("private", False)
+                  })
+              if len(repos) < 100:
+                  break
+              page += 1
+              time.sleep(0.5)
+
+          # Fetch Jira data if secrets are configured
+          jira_url = os.environ.get("JIRA_BASE_URL", "")
+          jira_email = os.environ.get("JIRA_USER_EMAIL", "")
+          jira_token = os.environ.get("JIRA_API_TOKEN", "")
+          jira_project = os.environ.get("JIRA_PROJECT_KEY", "SCRUM")
+
+          jira_data = {"open_count": 0, "by_status": {}, "recent": [], "all_tickets": [], "tickets_by_status": {}}
+
+          if jira_url and jira_email and jira_token:
+              import base64
+              jira_auth = base64.b64encode(f"{jira_email}:{jira_token}".encode()).decode()
+              jira_headers = {"Authorization": f"Basic {jira_auth}", "Content-Type": "application/json"}
+
+              # Fetch all non-Done tickets
+              try:
+                  jql = f"project={jira_project} AND status!=Done ORDER BY updated DESC"
+                  jurl = f"{jira_url}/rest/api/3/search?jql={urllib.parse.quote(jql)}&maxResults=100&fields=summary,status,assignee,priority,updated,labels"
+                  req = urllib.request.Request(jurl, headers=jira_headers)
+                  resp = urllib.request.urlopen(req)
+                  jira_resp = json.loads(resp.read().decode())
+                  issues = jira_resp.get("issues", [])
+                  jira_data["open_count"] = jira_resp.get("total", len(issues))
+
+                  status_counts = {}
+                  tickets_by_status = {}
+                  all_tickets = []
+                  for iss in issues:
+                      fields = iss.get("fields", {})
+                      status_name = fields.get("status", {}).get("name", "Unknown")
+                      assignee = fields.get("assignee")
+                      assignee_name = assignee.get("displayName", "") if assignee else ""
+                      ticket = {
+                          "key": iss["key"],
+                          "summary": fields.get("summary", ""),
+                          "status": status_name,
+                          "assignee": assignee_name,
+                          "priority": fields.get("priority", {}).get("name", ""),
+                          "updated": fields.get("updated", "")
+                      }
+                      all_tickets.append(ticket)
+                      status_counts[status_name] = status_counts.get(status_name, 0) + 1
+                      if status_name not in tickets_by_status:
+                          tickets_by_status[status_name] = []
+                      tickets_by_status[status_name].append(ticket)
+
+                  jira_data["by_status"] = status_counts
+                  jira_data["tickets_by_status"] = tickets_by_status
+                  jira_data["all_tickets"] = all_tickets
+                  jira_data["recent"] = all_tickets[:10]
+                  print(f"Fetched {len(issues)} Jira tickets ({jira_data['open_count']} open)")
+              except Exception as e:
+                  print(f"Jira fetch error: {e}")
+          else:
+              print("Jira secrets not configured -- skipping Jira data")
+
+          data = {
+              "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "total": len(all_repos),
+              "repos": all_repos,
+              "jira": jira_data
+          }
+
+          with open("dashboard-data.json", "w") as f:
+              json.dump(data, f, indent=2)
+
+          print(f"Generated dashboard-data.json with {len(all_repos)} repos")
+          PYSCRIPT
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f dashboard-data.json
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "chore: update dashboard data [skip ci]"
+            git push
+          fi

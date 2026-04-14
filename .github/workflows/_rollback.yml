@@ -1,0 +1,65 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Application name to rollback"
+        required: true
+        type: string
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - int
+          - qa
+          - stage
+          - prod
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.app_name }} in ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set script permissions
+        run: chmod +x scripts/*.sh scripts/*.py 2>/dev/null || true
+
+      - name: Log rollback request
+        run: |
+          echo "## Rollback Request" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Application | ${{ inputs.app_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | ${{ inputs.environment }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Requested by | ${{ github.actor }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Timestamp | $(date -u '+%Y-%m-%dT%H:%M:%SZ') |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Execute rollback
+        run: |
+          echo "Initiating rollback of ${{ inputs.app_name }} in ${{ inputs.environment }}"
+          if [ -f scripts/rollback.sh ]; then
+            bash scripts/rollback.sh \
+              --app "${{ inputs.app_name }}" \
+              --environment "${{ inputs.environment }}"
+          else
+            echo "No rollback script found at scripts/rollback.sh"
+            echo "Manual rollback may be required"
+          fi
+
+  notify:
+    name: Notify
+    needs: rollback
+    if: always()
+    uses: ./.github/workflows/_notify.yml
+    with:
+      job_name: "Rollback"
+      status: ${{ needs.rollback.result }}
+      app_name: ${{ inputs.app_name }}
+      environment: ${{ inputs.environment }}
+      version: "rollback"
+    secrets: inherit

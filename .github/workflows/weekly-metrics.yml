@@ -1,0 +1,31 @@
+name: Weekly DORA Metrics
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Calculate metrics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "## DORA Metrics Report" >> $GITHUB_STEP_SUMMARY
+          DEPLOYS=$(gh run list --status success --limit 100 --json databaseId 2>/dev/null | python3 -c "import json,sys;print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+          FAILED=$(gh run list --status failure --limit 100 --json databaseId 2>/dev/null | python3 -c "import json,sys;print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+          TOTAL=$((DEPLOYS + FAILED))
+          CFR=0; [ "$TOTAL" -gt 0 ] && CFR=$((FAILED * 100 / TOTAL))
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Successful deploys | $DEPLOYS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Failed | $FAILED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Change failure rate | ${CFR}% |" >> $GITHUB_STEP_SUMMARY
+      - name: Create issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --repo "${{ github.repository }}" --title "[Metrics] Weekly report $(date +%Y-%m-%d)" --body "See workflow run for details." --label "metrics" 2>/dev/null || true

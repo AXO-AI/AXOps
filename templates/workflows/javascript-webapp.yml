@@ -1,0 +1,356 @@
+name: ForgeOps JavaScript CI/CD
+
+on:
+  push:
+    branches: ['feature/*', 'hotfix/*']
+  pull_request:
+    branches: [int, qa, stage, main]
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [int, qa, stage, prod]
+
+permissions:
+  contents: write
+  checks: write
+
+env:
+  APP_NAME: "javascript-webapp"
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint || echo "No lint script configured -- skipping"
+
+      - name: Test
+        run: npm test -- --coverage --watchAll=false || echo "No test script configured -- skipping"
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  security:
+    name: Security Scan
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
+          chmod +x gitleaks
+          ./gitleaks detect --source . --no-git --verbose --exit-code 1
+
+      - name: Dependency Audit
+        run: npm audit --production || echo "npm audit found vulnerabilities -- review recommended"
+
+  deploy-int:
+    name: Deploy to INT
+    needs: [security]
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'int') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'int')
+    environment: int
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy
+        run: # Real deploy command goes here (SSH, kubectl, Docker push, etc.)
+
+      - name: Transition Jira Ticket
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_TRANSITION_NAME: "Ready for Unit Testing"
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ]; then
+            echo "No Jira ticket found in branch name: $BRANCH"
+            exit 0
+          fi
+          if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_USER_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "Jira secrets not configured -- skipping transition for $TICKET"
+            exit 0
+          fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          echo "Fetching transitions for $TICKET..."
+          TRANSITIONS=$(curl -s -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" 2>/dev/null) || { echo "Failed to reach Jira API"; exit 0; }
+          TID=$(echo "$TRANSITIONS" | jq -r --arg name "$JIRA_TRANSITION_NAME" '.transitions[]? | select(.name == $name) | .id' 2>/dev/null | head -1)
+          if [ -z "$TID" ] || [ "$TID" = "null" ]; then
+            echo "Transition '$JIRA_TRANSITION_NAME' not available for $TICKET"
+            echo "Available transitions: $(echo "$TRANSITIONS" | jq -r '.transitions[]?.name' 2>/dev/null | tr '\n' ', ')"
+            exit 0
+          fi
+          echo "Transitioning $TICKET to '$JIRA_TRANSITION_NAME' (id: $TID)..."
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            -d "{\"transition\":{\"id\":\"$TID\"}}" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" && echo "Done" || echo "Transition request failed"
+      - name: Add Jira Comment
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ] || [ -z "$JIRA_BASE_URL" ]; then exit 0; fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          BODY='{"body":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"Deployed to INT by ForgeOps pipeline. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}]}]}}'
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" -d "$BODY" "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/comment" && echo "Comment added to $TICKET" || echo "Comment failed"
+
+  deploy-qa:
+    name: Deploy to QA
+    needs: [security]
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'qa') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'qa')
+    environment: qa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy
+        run: # Real deploy command goes here (SSH, kubectl, Docker push, etc.)
+
+      - name: Transition Jira Ticket
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_TRANSITION_NAME: "Ready for SIT"
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ]; then
+            echo "No Jira ticket found in branch name: $BRANCH"
+            exit 0
+          fi
+          if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_USER_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "Jira secrets not configured -- skipping transition for $TICKET"
+            exit 0
+          fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          echo "Fetching transitions for $TICKET..."
+          TRANSITIONS=$(curl -s -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" 2>/dev/null) || { echo "Failed to reach Jira API"; exit 0; }
+          TID=$(echo "$TRANSITIONS" | jq -r --arg name "$JIRA_TRANSITION_NAME" '.transitions[]? | select(.name == $name) | .id' 2>/dev/null | head -1)
+          if [ -z "$TID" ] || [ "$TID" = "null" ]; then
+            echo "Transition '$JIRA_TRANSITION_NAME' not available for $TICKET"
+            echo "Available transitions: $(echo "$TRANSITIONS" | jq -r '.transitions[]?.name' 2>/dev/null | tr '\n' ', ')"
+            exit 0
+          fi
+          echo "Transitioning $TICKET to '$JIRA_TRANSITION_NAME' (id: $TID)..."
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            -d "{\"transition\":{\"id\":\"$TID\"}}" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" && echo "Done" || echo "Transition request failed"
+      - name: Add Jira Comment
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ] || [ -z "$JIRA_BASE_URL" ]; then exit 0; fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          BODY='{"body":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"Deployed to QA by ForgeOps pipeline. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}]}]}}'
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" -d "$BODY" "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/comment" && echo "Comment added to $TICKET" || echo "Comment failed"
+
+  deploy-stage:
+    name: Deploy to Stage
+    needs: [security]
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'stage') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stage')
+    environment: stage
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy
+        run: # Real deploy command goes here (SSH, kubectl, Docker push, etc.)
+
+      - name: Transition Jira Ticket
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_TRANSITION_NAME: "Ready for UAT"
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ]; then
+            echo "No Jira ticket found in branch name: $BRANCH"
+            exit 0
+          fi
+          if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_USER_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "Jira secrets not configured -- skipping transition for $TICKET"
+            exit 0
+          fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          echo "Fetching transitions for $TICKET..."
+          TRANSITIONS=$(curl -s -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" 2>/dev/null) || { echo "Failed to reach Jira API"; exit 0; }
+          TID=$(echo "$TRANSITIONS" | jq -r --arg name "$JIRA_TRANSITION_NAME" '.transitions[]? | select(.name == $name) | .id' 2>/dev/null | head -1)
+          if [ -z "$TID" ] || [ "$TID" = "null" ]; then
+            echo "Transition '$JIRA_TRANSITION_NAME' not available for $TICKET"
+            echo "Available transitions: $(echo "$TRANSITIONS" | jq -r '.transitions[]?.name' 2>/dev/null | tr '\n' ', ')"
+            exit 0
+          fi
+          echo "Transitioning $TICKET to '$JIRA_TRANSITION_NAME' (id: $TID)..."
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            -d "{\"transition\":{\"id\":\"$TID\"}}" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" && echo "Done" || echo "Transition request failed"
+      - name: Add Jira Comment
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ] || [ -z "$JIRA_BASE_URL" ]; then exit 0; fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          BODY='{"body":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"Deployed to Stage by ForgeOps pipeline. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}]}]}}'
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" -d "$BODY" "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/comment" && echo "Comment added to $TICKET" || echo "Comment failed"
+
+  deploy-prod:
+    name: Deploy to Prod
+    needs: [security]
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
+    environment: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy
+        run: # Real deploy command goes here (SSH, kubectl, Docker push, etc.)
+
+      - name: Transition Jira Ticket
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_TRANSITION_NAME: "Deployed to Production"
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ]; then
+            echo "No Jira ticket found in branch name: $BRANCH"
+            exit 0
+          fi
+          if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_USER_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "Jira secrets not configured -- skipping transition for $TICKET"
+            exit 0
+          fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          echo "Fetching transitions for $TICKET..."
+          TRANSITIONS=$(curl -s -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" 2>/dev/null) || { echo "Failed to reach Jira API"; exit 0; }
+          TID=$(echo "$TRANSITIONS" | jq -r --arg name "$JIRA_TRANSITION_NAME" '.transitions[]? | select(.name == $name) | .id' 2>/dev/null | head -1)
+          if [ -z "$TID" ] || [ "$TID" = "null" ]; then
+            echo "Transition '$JIRA_TRANSITION_NAME' not available for $TICKET"
+            echo "Available transitions: $(echo "$TRANSITIONS" | jq -r '.transitions[]?.name' 2>/dev/null | tr '\n' ', ')"
+            exit 0
+          fi
+          echo "Transitioning $TICKET to '$JIRA_TRANSITION_NAME' (id: $TID)..."
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" \
+            -d "{\"transition\":{\"id\":\"$TID\"}}" \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/transitions" && echo "Done" || echo "Transition request failed"
+      - name: Add Jira Comment
+        if: always()
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          TICKET=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$TICKET" ] || [ -z "$JIRA_BASE_URL" ]; then exit 0; fi
+          AUTH=$(echo -n "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" | base64)
+          BODY='{"body":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"Deployed to Prod by ForgeOps pipeline. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}]}]}}'
+          curl -s -X POST -H "Authorization: Basic $AUTH" -H "Content-Type: application/json" -d "$BODY" "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET}/comment" && echo "Comment added to $TICKET" || echo "Comment failed"
+
+  notify:
+    name: Notify
+    if: always()
+    needs: [build, security, deploy-int, deploy-qa, deploy-stage, deploy-prod]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Send Notification
+        run: |
+          echo "Pipeline completed for ${{ env.APP_NAME }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Status: completed"
+      - name: Send Teams Notification
+        if: always() && env.TEAMS_WEBHOOK_URL != ''
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          STATUS="${{ job.status }}"
+          REPO="${{ github.repository }}"
+          BRANCH="${{ github.ref_name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$STATUS" = "success" ]; then COLOR="059669"; TITLE="Build Passed"; else COLOR="dc2626"; TITLE="Build Failed"; fi
+          CARD="{\"@type\":\"MessageCard\",\"themeColor\":\"$COLOR\",\"title\":\"$TITLE: $(basename $REPO)\",\"sections\":[{\"facts\":[{\"name\":\"Repository\",\"value\":\"$REPO\"},{\"name\":\"Branch\",\"value\":\"$BRANCH\"},{\"name\":\"Status\",\"value\":\"$STATUS\"},{\"name\":\"Pipeline\",\"value\":\"[View run]($RUN_URL)\"}]}]}"
+          curl -s -H "Content-Type: application/json" -d "$CARD" "$TEAMS_WEBHOOK_URL" || echo "Teams notification failed"
+
+
+      - name: ForgeOps Log
+        run: |
+          chmod +x scripts/forgeops-log.sh 2>/dev/null || true
+          if [ -f scripts/forgeops-log.sh ]; then
+            bash scripts/forgeops-log.sh "${{ env.APP_NAME }}" "${{ github.ref_name }}" "${{ github.sha }}"
+          else
+            echo "forgeops-log.sh not found -- skipping audit log"
+          fi

@@ -1,0 +1,4 @@
+# Copy to your app repo as CODEOWNERS
+/.github/workflows/ @your-org/platform-team
+/scripts/ @your-org/platform-team
+/src/ @your-org/dev-team

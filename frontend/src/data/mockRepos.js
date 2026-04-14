@@ -1,0 +1,17 @@
+export const MOCK_REPOS = [
+  { name: 'AXOps', full_name: 'askboppana/AXOps' },
+  { name: 'admin-dashboard-web', full_name: 'askboppana/admin-dashboard-web' },
+  { name: 'auth-service', full_name: 'askboppana/auth-service' },
+  { name: 'java-svc-payments', full_name: 'company/java-svc-payments' },
+  { name: 'spring-boot-orders', full_name: 'company/spring-boot-orders' },
+  { name: 'react-customer-portal', full_name: 'company/react-customer-portal' },
+  { name: 'node-api-gateway', full_name: 'company/node-api-gateway' },
+  { name: 'py-data-pipeline', full_name: 'company/py-data-pipeline' },
+  { name: 'dotnet-billing', full_name: 'company/dotnet-billing' },
+  { name: 'uipath-bot-invoicing', full_name: 'company/uipath-bot-invoicing' },
+  { name: 'sf-apex-triggers', full_name: 'company/sf-apex-triggers' },
+  { name: 'informatica-etl-pipeline', full_name: 'company/informatica-etl-pipeline' },
+  { name: 'rpa-expense-processor', full_name: 'company/rpa-expense-processor' },
+  { name: 'devops-scripts', full_name: 'company/devops-scripts' },
+  { name: 'infrastructure-config', full_name: 'company/infrastructure-config' },
+];
