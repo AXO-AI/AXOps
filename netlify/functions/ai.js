@@ -28,7 +28,10 @@ async function callClaude(systemPrompt, userContent, maxTokens = 4096) {
 
   const data = await res.json();
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${JSON.stringify(data)}`);
-  return data;
+
+  // Extract text from Anthropic response format
+  const text = data.content?.[0]?.text || '';
+  return { response: text, raw: data };
 }
 
 exports.handler = async (event) => {
@@ -42,7 +45,6 @@ exports.handler = async (event) => {
     if (parts[i] === 'ai') { route = parts.slice(i + 1); break; }
   }
   const body = event.body ? JSON.parse(event.body) : {};
-  const query = event.queryStringParameters || {};
 
   try {
     if (method !== 'POST') {
@@ -51,7 +53,7 @@ exports.handler = async (event) => {
 
     // POST /analyze-transcript
     if (route[0] === 'analyze-transcript') {
-      const systemPrompt = `You are a project management assistant for ForgeOps. Analyze meeting transcripts and extract actionable items. Return a JSON object with:
+      const systemPrompt = `You are a project management assistant for AXOps. Analyze meeting transcripts and extract actionable items. Return a JSON object with:
 - stories: array of {title, description, acceptance_criteria, priority}
 - defects: array of {title, description, steps_to_reproduce, severity}
 - action_items: array of {description, assignee, due_date}
@@ -62,12 +64,11 @@ Return ONLY valid JSON, no markdown.`;
 
     // POST /code-review
     if (route[0] === 'code-review') {
-      const systemPrompt = `You are a senior code reviewer for ForgeOps. Review the provided code diff and identify:
+      const systemPrompt = `You are a senior code reviewer for AXOps. Review the provided code diff and identify:
 - Bugs and logical errors
 - Security vulnerabilities
 - Performance issues
 - Code style and best practices
-- Suggestions for improvement
 Format your response as JSON with: {summary, issues: [{severity, category, line, description, suggestion}], overall_rating}
 Return ONLY valid JSON, no markdown.`;
       const data = await callClaude(systemPrompt, body.diff || body.code);
@@ -76,7 +77,7 @@ Return ONLY valid JSON, no markdown.`;
 
     // POST /root-cause
     if (route[0] === 'root-cause') {
-      const systemPrompt = `You are a DevOps expert for ForgeOps. Analyze the provided error logs and perform root cause analysis. Return JSON with:
+      const systemPrompt = `You are a DevOps expert for AXOps. Analyze the provided error logs and perform root cause analysis. Return JSON with:
 - root_cause: string describing the likely root cause
 - contributing_factors: array of strings
 - impact: string describing the impact
@@ -89,12 +90,11 @@ Return ONLY valid JSON, no markdown.`;
 
     // POST /changelog
     if (route[0] === 'changelog') {
-      const systemPrompt = `You are a technical writer for ForgeOps. Generate release notes from the provided commit history. Return JSON with:
+      const systemPrompt = `You are a technical writer for AXOps. Generate release notes from the provided commit history. Return JSON with:
 - version: string
 - date: string
 - highlights: array of key changes
 - sections: {features: [], fixes: [], improvements: [], breaking_changes: []}
-- contributors: array of unique authors
 Each item should have: {description, commit_sha (abbreviated)}
 Return ONLY valid JSON, no markdown.`;
       const userContent = typeof body.commits === 'string' ? body.commits : JSON.stringify(body.commits);
@@ -104,26 +104,41 @@ Return ONLY valid JSON, no markdown.`;
 
     // POST /chat
     if (route[0] === 'chat') {
-      const systemPrompt = `You are ForgeOps AI Assistant, a helpful DevOps and software engineering assistant. You help with:
-- CI/CD pipeline questions
-- Git workflow guidance
-- Jira ticket management
-- Code review assistance
-- Infrastructure and deployment questions
-- General software engineering best practices
-Be concise, practical, and specific. When relevant, reference ForgeOps platform capabilities.`;
-      const data = await callClaude(systemPrompt, body.message || body.question, body.maxTokens || 4096);
+      const page = body.context?.page || '';
+      const systemPrompt = `You are the AXOps AI Assistant — an intelligent DevSecOps co-pilot embedded in the AXOps platform.
+
+AXOps is an enterprise DevSecOps command center with these modules:
+- Overview: dashboard with repo stats, pipeline health, policy compliance
+- Commit: browse Jira tickets by release, create branches, edit files, commit & push
+- Merge: compare branches, cherry-pick commits, SCA scan, approval workflow, real GitHub merges
+- CI/CD: build history, deploy between environments, compare environments, approvals, audit trail
+- Pipelines: visual pipeline builder — drag stages to build GitHub Actions YAML, edit existing workflows, 8 templates (Node.js, Java, Python, .NET, Salesforce, UiPath, Informatica, Docker)
+- Security: SCA vulnerability scanning
+- Policies: 7-category policy engine (pipeline, branch, secrets, deployment, compliance, AI policies)
+- Meetings: AI transcript analysis
+- Support: internal ticket management
+
+The user is currently on: ${page || 'unknown page'}
+
+When the user asks you to DO something (create a pipeline, scan a repo, etc.):
+1. Give specific step-by-step instructions using the AXOps UI
+2. Reference the exact page and buttons to click
+3. If it involves the Pipelines page, describe which template to use and which stages to add
+4. Be actionable — don't just explain concepts, tell them exactly what to do
+
+When the user asks a question, be concise and practical. Use short paragraphs, not walls of text.`;
+
+      const data = await callClaude(systemPrompt, body.message || body.question, body.maxTokens || 2048);
       return respond(200, data);
     }
 
     // POST /pr-description
     if (route[0] === 'pr-description') {
-      const systemPrompt = `You are a developer assistant for ForgeOps. Generate a clear, well-structured pull request description from the provided diff. Return JSON with:
+      const systemPrompt = `You are a developer assistant for AXOps. Generate a clear PR description from the provided diff. Return JSON with:
 - title: concise PR title (under 72 chars)
 - summary: 2-3 sentence overview
 - changes: array of {category, items: [string]}
 - testing_notes: array of testing suggestions
-- reviewers_notes: key areas for reviewers to focus on
 Return ONLY valid JSON, no markdown.`;
       const data = await callClaude(systemPrompt, body.diff || body.changes);
       return respond(200, data);
