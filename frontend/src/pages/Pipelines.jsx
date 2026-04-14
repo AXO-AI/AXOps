@@ -200,9 +200,9 @@ function parseYAML(text) {
 
 /* ═══ MOCK REPOS FALLBACK ═══ */
 const MOCK_REPOS = [
-  { name: 'AXOps', full_name: 'askboppana/AXOps' },
-  { name: 'admin-dashboard-web', full_name: 'askboppana/admin-dashboard-web' },
-  { name: 'auth-service', full_name: 'askboppana/auth-service' },
+  { name: 'AXOps', full_name: 'AXO-AI/AXOps' },
+  { name: 'admin-dashboard-web', full_name: 'AXO-AI/admin-dashboard-web' },
+  { name: 'auth-service', full_name: 'AXO-AI/auth-service' },
 ];
 
 /* ═══════════════════════════════════════════════ */

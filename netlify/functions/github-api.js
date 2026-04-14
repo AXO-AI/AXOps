@@ -112,9 +112,9 @@ function setCache(key, data) {
 // ── Mock data ──
 
 const MOCK_REPOS = [
-  { name: 'ForgeOps', full_name: 'askboppana/AXOps', language: 'JavaScript', default_branch: 'main', updated_at: new Date().toISOString() },
-  { name: 'admin-dashboard-web', full_name: 'askboppana/admin-dashboard-web', language: 'Python', default_branch: 'main', updated_at: new Date().toISOString() },
-  { name: 'auth-service', full_name: 'askboppana/auth-service', language: 'JavaScript', default_branch: 'main', updated_at: new Date().toISOString() },
+  { name: 'ForgeOps', full_name: 'AXO-AI/AXOps', language: 'JavaScript', default_branch: 'main', updated_at: new Date().toISOString() },
+  { name: 'admin-dashboard-web', full_name: 'AXO-AI/admin-dashboard-web', language: 'Python', default_branch: 'main', updated_at: new Date().toISOString() },
+  { name: 'auth-service', full_name: 'AXO-AI/auth-service', language: 'JavaScript', default_branch: 'main', updated_at: new Date().toISOString() },
   { name: 'java-svc-payments', full_name: 'company/java-svc-payments', language: 'Java', default_branch: 'main', updated_at: new Date().toISOString() },
   { name: 'spring-boot-orders', full_name: 'company/spring-boot-orders', language: 'Java', default_branch: 'main', updated_at: new Date().toISOString() },
   { name: 'react-customer-portal', full_name: 'company/react-customer-portal', language: 'JavaScript', default_branch: 'main', updated_at: new Date().toISOString() },

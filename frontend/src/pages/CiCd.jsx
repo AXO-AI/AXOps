@@ -14,9 +14,9 @@ import { getRepoProfile, getNextEnv, ENV_PROFILES } from '../data/envProfiles';
 
 /* ── mock fallback repos ── */
 const MOCK_REPOS = [
-  { name: 'AXOps', full_name: 'askboppana/AXOps' },
-  { name: 'admin-dashboard-web', full_name: 'askboppana/admin-dashboard-web' },
-  { name: 'auth-service', full_name: 'askboppana/auth-service' },
+  { name: 'AXOps', full_name: 'AXO-AI/AXOps' },
+  { name: 'admin-dashboard-web', full_name: 'AXO-AI/admin-dashboard-web' },
+  { name: 'auth-service', full_name: 'AXO-AI/auth-service' },
   { name: 'java-svc-payments', full_name: 'company/java-svc-payments' },
   { name: 'spring-boot-orders', full_name: 'company/spring-boot-orders' },
   { name: 'react-customer-portal', full_name: 'company/react-customer-portal' },
