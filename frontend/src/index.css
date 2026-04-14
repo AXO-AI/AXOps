@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --bg-primary: #0B0F1A;
-  --bg-secondary: #0F1420;
-  --bg-card: rgba(255,255,255,0.04);
-  --bg-card-solid: #131928;
-  --border: rgba(255,255,255,0.08);
-  --border-hover: rgba(255,255,255,0.14);
-  --text-primary: #E8ECF4;
-  --text-secondary: #8B93A6;
-  --text-tertiary: #505872;
+  --bg-primary: #0E1117;
+  --bg-secondary: #161B22;
+  --bg-card: #1C2333;
+  --bg-card-solid: #1C2333;
+  --border: rgba(255,255,255,0.1);
+  --border-hover: rgba(255,255,255,0.18);
+  --text-primary: #F0F3F6;
+  --text-secondary: #9CA3B0;
+  --text-tertiary: #5C6370;
   --accent: #7C6FFF;
   --accent-light: rgba(124,111,255,0.12);
   --accent-hover: #6B5CE7;
@@ -21,11 +21,9 @@
   --danger-light: rgba(248,81,73,0.12);
   --info: #58A6FF;
   --info-light: rgba(88,166,255,0.12);
-  --glass: rgba(255,255,255,0.03);
-  --glass-border: rgba(255,255,255,0.06);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.35);
 }
 
 body {
@@ -39,14 +37,12 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-/* Glass card */
+/* Cards — visible, not invisible */
 .card-base {
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-sm);
@@ -59,7 +55,7 @@ body {
 
 /* Code blocks */
 .code-dark {
-  background: #080C14;
+  background: #0A0E17;
   color: #E6EDF3;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }

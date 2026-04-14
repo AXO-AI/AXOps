@@ -42,10 +42,8 @@ export default function Sidebar() {
       className="flex flex-col h-screen shrink-0"
       style={{
         width: 230,
-        background: 'rgba(11,15,26,0.85)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
+        background: '#12161F',
+        borderRight: '1px solid rgba(255,255,255,0.08)',
       }}
     >
       {/* Logo */}
@@ -55,15 +53,15 @@ export default function Sidebar() {
             <path d="M16 6L9 18h5l-2 8L21 14h-5l2-8z" fill="white" />
           </svg>
         </div>
-        <span className="font-semibold text-base tracking-tight" style={{ color: '#E8ECF4' }}>AXOps</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'rgba(124,111,255,0.15)', color: 'var(--accent)' }}>v1.0</span>
+        <span className="font-semibold text-base tracking-tight" style={{ color: '#F0F3F6' }}>AXOps</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'rgba(124,111,255,0.15)', color: '#7C6FFF' }}>v1.0</span>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-1">
         {sections.map((sec) => (
           <div key={sec.label} className="mb-5">
-            <div className="text-[10px] font-semibold tracking-widest px-3 mb-2" style={{ color: 'rgba(255,255,255,0.25)' }}>
+            <div className="text-[10px] font-semibold tracking-widest px-3 mb-2" style={{ color: 'rgba(255,255,255,0.2)' }}>
               {sec.label}
             </div>
             {sec.items.map((item) => (
@@ -73,12 +71,12 @@ export default function Sidebar() {
                 end={item.end}
                 className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] no-underline transition-all mb-0.5"
                 style={({ isActive }) => ({
-                  color: isActive ? '#E8ECF4' : 'rgba(255,255,255,0.4)',
-                  background: isActive ? 'rgba(124,111,255,0.12)' : 'transparent',
+                  color: isActive ? '#F0F3F6' : '#7A8194',
+                  background: isActive ? 'rgba(124,111,255,0.1)' : 'transparent',
                   fontWeight: isActive ? 500 : 400,
                 })}
               >
-                <item.icon size={16} style={{ opacity: 0.8 }} />
+                <item.icon size={16} />
                 {item.text}
               </NavLink>
             ))}
@@ -87,7 +85,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="flex items-center gap-2 px-5 py-4 text-xs" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
+      <div className="flex items-center gap-2 px-5 py-4 text-xs" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', color: '#5C6370' }}>
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#3FB950' }} />
         All systems operational
       </div>
