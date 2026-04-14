@@ -1,43 +1,27 @@
 import { useState } from 'react';
 import { Search } from 'lucide-react';
 
-const levelColors = {
-  INFO: '#58A6FF',
-  WARN: '#D29922',
-  ERROR: '#F85149',
-  DEBUG: '#5C6370',
-  OK: '#3FB950',
-};
+const levelColors = { INFO: '#58A6FF', WARN: '#D29922', ERROR: '#F85149', DEBUG: '#6E7681', OK: '#3FB950' };
 
 export default function LogViewer({ logs = [] }) {
   const [filter, setFilter] = useState('');
-  const filtered = logs.filter(
-    (l) => !filter || (l.message || '').toLowerCase().includes(filter.toLowerCase())
-  );
+  const filtered = logs.filter(l => !filter || (l.message || '').toLowerCase().includes(filter.toLowerCase()));
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-      <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#1C2333', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <Search size={14} style={{ color: '#5C6370' }} />
-        <input
-          className="bg-transparent border-none outline-none text-sm flex-1"
-          style={{ color: '#F0F3F6' }}
-          placeholder="Filter logs..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+    <div style={{ borderRadius: 8, overflow: 'hidden', border: '0.5px solid #30363D' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#161B22', borderBottom: '0.5px solid #21262D' }}>
+        <Search size={12} style={{ color: '#484F58' }} />
+        <input style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 11, color: '#C9D1D9', flex: 1 }}
+          placeholder="Filter logs..." value={filter} onChange={e => setFilter(e.target.value)} />
       </div>
-      <div className="overflow-auto max-h-96 font-mono text-xs p-3" style={{ background: '#0A0E17' }}>
-        {filtered.length === 0 && (
-          <div className="py-4 text-center" style={{ color: '#5C6370' }}>No logs to display</div>
-        )}
+      <div style={{ overflowY: 'auto', maxHeight: 380, fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace', fontSize: 11, padding: 8, background: '#0D1117' }}>
+        {filtered.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#484F58' }}>No logs to display</div>}
         {filtered.map((log, i) => (
-          <div key={i} className="flex gap-3 py-0.5 leading-5"
-            style={{ borderLeft: log.level === 'ERROR' ? '2px solid #F85149' : '2px solid transparent', paddingLeft: 4 }}>
-            <span className="select-none w-8 text-right shrink-0" style={{ color: '#3D4455' }}>{i + 1}</span>
-            <span className="shrink-0" style={{ color: '#5C6370' }}>{log.time || ''}</span>
-            <span className="font-semibold shrink-0 w-12" style={{ color: levelColors[log.level] || '#9CA3B0' }}>{log.level || 'INFO'}</span>
-            <span style={{ color: '#D0D7E0' }}>{log.message || ''}</span>
+          <div key={i} style={{ display: 'flex', gap: 10, padding: '1px 0', lineHeight: '18px', borderLeft: log.level === 'ERROR' ? '2px solid #F85149' : '2px solid transparent', paddingLeft: 4 }}>
+            <span style={{ width: 28, textAlign: 'right', color: '#21262D', flexShrink: 0, userSelect: 'none' }}>{i + 1}</span>
+            <span style={{ color: '#484F58', flexShrink: 0 }}>{log.time || ''}</span>
+            <span style={{ fontWeight: 600, width: 40, flexShrink: 0, color: levelColors[log.level] || '#8B949E' }}>{log.level || 'INFO'}</span>
+            <span style={{ color: '#C9D1D9' }}>{log.message || ''}</span>
           </div>
         ))}
       </div>

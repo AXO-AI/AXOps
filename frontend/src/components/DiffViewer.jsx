@@ -3,65 +3,38 @@ import { FileCode, Plus, Minus } from 'lucide-react';
 export default function DiffViewer({ files = [] }) {
   if (files.length === 0) {
     return (
-      <div className="rounded-lg p-8 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
+      <div style={{ background: '#161B22', border: '0.5px solid #30363D', borderRadius: 8, padding: 32, textAlign: 'center', color: '#484F58', fontSize: 12 }}>
         No file changes to display
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {files.map((file, fi) => (
-        <div key={fi} className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-          {/* File header */}
-          <div
-            className="flex items-center gap-2 px-3 py-2 text-sm"
-            style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}
-          >
-            <FileCode size={14} style={{ color: 'var(--text-tertiary)' }} />
-            <span className="font-mono flex-1" style={{ color: 'var(--text-primary)' }}>
-              {file.filename || 'unknown'}
-            </span>
+        <div key={fi} style={{ borderRadius: 8, overflow: 'hidden', border: '0.5px solid #30363D' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#161B22', borderBottom: '0.5px solid #21262D', fontSize: 12 }}>
+            <FileCode size={13} style={{ color: '#6E7681' }} />
+            <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace', flex: 1, color: '#C9D1D9', fontSize: 11 }}>{file.filename || 'unknown'}</span>
             {file.additions > 0 && (
-              <span className="flex items-center gap-0.5 text-xs" style={{ color: 'var(--success)' }}>
-                <Plus size={12} />
-                {file.additions}
-              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#3FB950' }}><Plus size={10} />{file.additions}</span>
             )}
             {file.deletions > 0 && (
-              <span className="flex items-center gap-0.5 text-xs" style={{ color: 'var(--danger)' }}>
-                <Minus size={12} />
-                {file.deletions}
-              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#F85149' }}><Minus size={10} />{file.deletions}</span>
             )}
           </div>
-
-          {/* Patch */}
           {file.patch && (
-            <div className="overflow-x-auto font-mono text-xs" style={{ background: '#0D1117' }}>
+            <div style={{ overflowX: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 11, background: '#0D1117' }}>
               {file.patch.split('\n').map((line, li) => {
                 let bg = 'transparent';
-                let color = 'var(--text-primary)';
-                if (line.startsWith('+') && !line.startsWith('+++')) {
-                  bg = 'rgba(63,185,80,0.12)';
-                  color = 'var(--success)';
-                } else if (line.startsWith('-') && !line.startsWith('---')) {
-                  bg = 'rgba(248,81,73,0.12)';
-                  color = 'var(--danger)';
-                } else if (line.startsWith('@@')) {
-                  color = 'var(--accent)';
-                }
+                let color = '#C9D1D9';
+                if (line.startsWith('+') && !line.startsWith('+++')) { bg = 'rgba(63,185,80,0.1)'; color = '#3FB950'; }
+                else if (line.startsWith('-') && !line.startsWith('---')) { bg = 'rgba(248,81,73,0.1)'; color = '#F85149'; }
+                else if (line.startsWith('@@')) { color = '#7F77DD'; }
                 return (
-                  <div key={li} className="flex" style={{ background: bg }}>
-                    <span
-                      className="select-none w-10 text-right pr-3 shrink-0 leading-5"
-                      style={{ color: 'var(--text-tertiary)' }}
-                    >
-                      {li + 1}
-                    </span>
-                    <span className="px-2 leading-5 whitespace-pre" style={{ color }}>
-                      {line}
-                    </span>
+                  <div key={li} style={{ display: 'flex', background: bg }}>
+                    <span style={{ userSelect: 'none', width: 36, textAlign: 'right', paddingRight: 8, flexShrink: 0, lineHeight: '18px', color: '#21262D' }}>{li + 1}</span>
+                    <span style={{ padding: '0 8px', lineHeight: '18px', whiteSpace: 'pre', color }}>{line}</span>
                   </div>
                 );
               })}

@@ -70,11 +70,11 @@ export default function Overview() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Overview</h1>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Dashboard</h1>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard value={repoCount} label="AXOps Repos" icon={FolderGit2} color="var(--accent)" />
+        <StatCard value={repoCount} label="ForgeOps Repos" icon={FolderGit2} color="var(--accent)" />
         <StatCard value={ticketCount} label="Open Tickets" icon={Ticket} color="var(--info)" />
         <StatCard value={pipelineHealth != null ? `${pipelineHealth}%` : '--'} label="Pipeline Health" icon={Activity} color="var(--success)" />
         <StatCard value={`${getComplianceScore().score}%`} label="Policy Compliance" icon={ShieldCheck} color="var(--warning)" />

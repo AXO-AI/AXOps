@@ -68,7 +68,7 @@ export default function Notifications() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Notifications</h1>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Activity</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Send form */}

@@ -139,7 +139,7 @@ export default function Policies() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Policies</h1>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Governance</h1>
       <div className="flex gap-1 mb-6 overflow-x-auto">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}

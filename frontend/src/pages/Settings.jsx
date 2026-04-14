@@ -114,7 +114,7 @@ export default function Settings() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Administration</h1>
         <button
           onClick={save}
           className="px-5 py-2 rounded-lg text-sm font-medium border-none cursor-pointer flex items-center gap-2"

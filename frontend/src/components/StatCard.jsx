@@ -1,26 +1,16 @@
-export default function StatCard({ value, label, color, icon: Icon }) {
+export default function StatCard({ value, label, color, icon: Icon, delta, deltaColor }) {
   return (
-    <div
-      className="rounded-xl p-5 flex items-center gap-4"
-      style={{
-        background: '#1C2333',
-        border: '1px solid rgba(255,255,255,0.08)',
-      }}
-    >
-      {Icon && (
-        <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: `${color || 'var(--accent)'}18` }}
-        >
-          <Icon size={18} style={{ color: color || 'var(--accent)' }} />
-        </div>
-      )}
-      <div>
-        <div className="text-2xl font-bold tracking-tight" style={{ color: '#F0F3F6' }}>
-          {value ?? '--'}
-        </div>
-        <div className="text-xs mt-0.5" style={{ color: '#9CA3B0' }}>
-          {label}
+    <div style={{ background: '#161B22', border: '0.5px solid #30363D', borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {Icon && (
+          <div style={{ width: 32, height: 32, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color || '#7F77DD'}15`, flexShrink: 0 }}>
+            <Icon size={15} style={{ color: color || '#7F77DD' }} />
+          </div>
+        )}
+        <div>
+          <div style={{ fontSize: 10, color: '#6E7681', marginBottom: 2 }}>{label}</div>
+          <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: -0.5, color: color || '#E6EDF3', lineHeight: 1 }}>{value ?? '--'}</div>
+          {delta && <div style={{ fontSize: 9, marginTop: 3, color: deltaColor || '#3FB950' }}>{delta}</div>}
         </div>
       </div>
     </div>

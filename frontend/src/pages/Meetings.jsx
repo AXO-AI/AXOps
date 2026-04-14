@@ -109,7 +109,7 @@ export default function Meetings() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Meetings</h1>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Insights</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Input */}

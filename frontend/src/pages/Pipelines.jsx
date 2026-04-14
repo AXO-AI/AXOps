@@ -231,7 +231,7 @@ export default function Pipelines() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Pipelines</h1>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Pipeline Studio</h1>
       <div className="flex gap-1 mb-6">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}

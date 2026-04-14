@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Landing from './pages/Landing';
 import Overview from './pages/Overview';
@@ -21,17 +21,28 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/app" element={<Layout />}>
           <Route index element={<Overview />} />
-          <Route path="commit" element={<Commit />} />
+          {/* New route names */}
+          <Route path="dashboard" element={<Overview />} />
+          <Route path="workbench" element={<Commit />} />
           <Route path="merge" element={<Merge />} />
-          <Route path="cicd" element={<CiCd />} />
-          <Route path="pipelines" element={<Pipelines />} />
+          <Route path="deployments" element={<CiCd />} />
+          <Route path="pipeline-studio" element={<Pipelines />} />
           <Route path="security" element={<Security />} />
-          <Route path="policies" element={<Policies />} />
-          <Route path="meetings" element={<Meetings />} />
-          <Route path="notifications" element={<Notifications />} />
+          <Route path="governance" element={<Policies />} />
+          <Route path="insights" element={<Meetings />} />
+          <Route path="activity" element={<Notifications />} />
           <Route path="team" element={<Team />} />
           <Route path="support" element={<Support />} />
-          <Route path="settings" element={<Settings />} />
+          <Route path="administration" element={<Settings />} />
+          {/* Old route redirects */}
+          <Route path="overview" element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="commit" element={<Navigate to="/app/workbench" replace />} />
+          <Route path="cicd" element={<Navigate to="/app/deployments" replace />} />
+          <Route path="pipelines" element={<Navigate to="/app/pipeline-studio" replace />} />
+          <Route path="policies" element={<Navigate to="/app/governance" replace />} />
+          <Route path="meetings" element={<Navigate to="/app/insights" replace />} />
+          <Route path="notifications" element={<Navigate to="/app/activity" replace />} />
+          <Route path="settings" element={<Navigate to="/app/administration" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

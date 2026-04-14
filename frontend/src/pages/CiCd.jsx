@@ -96,7 +96,7 @@ export default function CiCd() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>CI/CD</h1>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Deployments</h1>
 
       {/* tab bar */}
       <div className="flex gap-1 mb-6 overflow-x-auto">

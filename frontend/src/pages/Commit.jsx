@@ -357,7 +357,7 @@ export default function Commit() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Commit</h1>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>Workbench</h1>
 
       {/* ── Filters row ── */}
       <div className="flex flex-wrap gap-4 mb-6">
