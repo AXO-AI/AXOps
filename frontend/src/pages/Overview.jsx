@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FolderGit2, Ticket, Activity, Loader2, Server, CheckCircle2, XCircle, Clock, ShieldCheck } from 'lucide-react';
 import StatCard from '../components/StatCard';
@@ -78,6 +78,7 @@ export default function Overview() {
   const [planRunning, setPlanRunning] = useState(false);
   const [planComplete, setPlanComplete] = useState(false);
   const [planFailed, setPlanFailed] = useState(false);
+  const planCancelledRef = useRef(false);
 
   // Agent scanner
   const runAgentScan = useCallback(() => {
@@ -513,28 +514,42 @@ export default function Overview() {
     }
   }
 
+  // Cancel running plan and rollback
+  const cancelAndRollback = async () => {
+    planCancelledRef.current = true;
+    if (activePlan) {
+      logAgentAction({ title: activePlan.trigger }, 'Cancelled', 'User cancelled plan execution');
+      await rollbackPlan(activePlan, planStepResults, { title: activePlan.trigger });
+    }
+    setPlanFailed(true);
+    setPlanRunning(false);
+  };
+
   // Main plan executor
   const executePlan = async (plan, finding) => {
+    planCancelledRef.current = false;
     setPlanRunning(true);
     setPlanFailed(false);
     setPlanComplete(false);
+    setPlanStepResults([]);
     const results = [];
 
     for (let i = 0; i < plan.steps.length; i++) {
+      if (planCancelledRef.current) {
+        logAgentAction(finding || { title: plan.trigger }, 'Cancelled', `Stopped at step ${i + 1}`);
+        return { success: false, failedAt: i + 1, reason: 'cancelled' };
+      }
+
       const step = plan.steps[i];
       setPlanStepIdx(i);
 
       try {
-        await new Promise(r => setTimeout(r, 600)); // pacing for UX
+        await new Promise(r => setTimeout(r, 600));
 
-        // Execute
         const result = await executeAction(step.action, step.params);
-
-        // Verify
         const verified = await verifyAction(step.verify, result);
 
         if (!verified) {
-          // Verification failed
           results.push({ ...step, result: { ok: false, detail: result.detail + ' (verification failed)' } });
           setPlanStepResults([...results]);
           logAgentAction(finding || { title: plan.trigger }, step.label, 'FAILED: verification_failed');
@@ -544,13 +559,11 @@ export default function Overview() {
           return { success: false, failedAt: step.step, reason: 'verification_failed' };
         }
 
-        // Success
         results.push({ ...step, result });
         setPlanStepResults([...results]);
         logAgentAction(finding || { title: plan.trigger }, step.label, result.detail);
 
       } catch (err) {
-        // Exception
         results.push({ ...step, result: { ok: false, detail: err?.message || 'Exception' } });
         setPlanStepResults([...results]);
         logAgentAction(finding || { title: plan.trigger }, step.label, 'Error: ' + (err?.message || 'unknown'));
@@ -561,7 +574,6 @@ export default function Overview() {
       }
     }
 
-    // All steps passed
     setPlanComplete(true);
     setPlanRunning(false);
     logAgentAction(finding || { title: plan.trigger }, 'Plan complete', `${results.length} steps executed`);
@@ -626,20 +638,29 @@ export default function Overview() {
             const isThisPlanActive = activePlan?.plan_id === plan?.plan_id;
             const riskColors = { high: '#F85149', medium: '#D29922', low: '#3FB950' };
 
+            const isExecuting = isThisPlanActive && planRunning;
+            const currentStep = isExecuting && plan ? plan.steps[planStepIdx] : null;
+
             return (
-              <div key={i} style={{ background: '#161B22', border: '0.5px solid #30363D', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+              <div key={i} style={{ background: '#161B22', border: isExecuting ? '0.5px solid #7F77DD' : '0.5px solid #30363D', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
                 {/* Header row */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
-                  <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: sev.bg, color: sev.color, fontWeight: 700, textTransform: 'uppercase' }}>
-                    {f.severity === 'warning' ? 'MEDIUM RISK' : f.severity === 'critical' ? 'HIGH RISK' : f.severity === 'error' ? 'ERROR' : 'INFO'}
-                  </span>
-                  <span style={{ fontSize: 10, color: '#484F58' }}>{timeAgo(f.timestamp)}</span>
+                  {isExecuting ? (
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(127,119,221,0.15)', color: '#7F77DD', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Loader2 size={9} className="animate-spin" /> EXECUTING
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: sev.bg, color: sev.color, fontWeight: 700, textTransform: 'uppercase' }}>
+                      {f.severity === 'warning' ? 'MEDIUM RISK' : f.severity === 'critical' ? 'HIGH RISK' : f.severity === 'error' ? 'ERROR' : 'INFO'}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 10, color: '#484F58' }}>{isExecuting ? 'just now' : timeAgo(f.timestamp)}</span>
                 </div>
 
                 {/* Title + detail */}
                 <div style={{ padding: '0 14px 10px' }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#E6EDF3', marginBottom: 3 }}>{f.title}</div>
-                  {f.detail && <div style={{ fontSize: 11, color: '#8B949E' }}>{f.detail}</div>}
+                  {!isExecuting && f.detail && <div style={{ fontSize: 11, color: '#8B949E' }}>{f.detail}</div>}
                 </div>
 
                 {/* Inline plan table */}
@@ -666,8 +687,13 @@ export default function Overview() {
                   </div>
                 )}
 
-                {/* Plan metadata */}
-                {plan && (
+                {/* Plan metadata or execution progress */}
+                {plan && isExecuting && currentStep && (
+                  <div style={{ padding: '0 14px 10px', fontSize: 11, color: '#7F77DD' }}>
+                    Step {planStepIdx + 1}/{plan.steps.length} — {currentStep.label.toLowerCase()}...
+                  </div>
+                )}
+                {plan && !isExecuting && !planComplete && !planFailed && (
                   <div style={{ padding: '0 14px 10px', display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 10, color: '#6E7681' }}>
                     <span>Estimated: {plan.estimated_time}</span>
                     <span>Confidence: {Math.round(plan.confidence * 100)}%</span>
@@ -695,6 +721,14 @@ export default function Overview() {
 
                 {/* Action buttons */}
                 <div style={{ display: 'flex', gap: 6, padding: '0 14px 12px' }}>
+                  {/* During execution: Cancel & rollback */}
+                  {isExecuting && (
+                    <button onClick={cancelAndRollback}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'rgba(248,81,73,0.1)', color: '#F85149', border: '0.5px solid rgba(248,81,73,0.3)' }}>
+                      Cancel &amp; rollback
+                    </button>
+                  )}
+                  {/* Before execution: Approve & execute */}
                   {plan && !isThisPlanActive && !planRunning && (
                     <button onClick={() => handleAgentAction(f, { label: 'Execute plan', op: 'execute_plan', primary: true })}
                       style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: '#7F77DD', color: '#fff' }}>
@@ -707,12 +741,14 @@ export default function Overview() {
                       Modify plan
                     </button>
                   )}
-                  {isThisPlanActive && (planComplete || planFailed) && (
+                  {/* After execution: Dismiss */}
+                  {isThisPlanActive && (planComplete || planFailed) && !isExecuting && (
                     <button onClick={() => { setActivePlan(null); setPlanStepResults([]); setPlanComplete(false); setPlanFailed(false); if (planComplete) setAgentFindings(prev => prev.filter(x => x !== f)); }}
                       style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>
                       Dismiss
                     </button>
                   )}
+                  {/* Non-plan findings */}
                   {!plan && (f.actions || []).map((ad, j) => {
                     const isRunning = actionRunning === `${f.title}:${ad.label}`;
                     return (
@@ -722,7 +758,7 @@ export default function Overview() {
                       </button>
                     );
                   })}
-                  {!plan && (
+                  {!plan && !isExecuting && (
                     <button onClick={() => setAgentFindings(prev => prev.filter(x => x !== f))}
                       style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#484F58', border: '0.5px solid #21262D' }}>
                       Dismiss
