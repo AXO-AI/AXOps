@@ -5,7 +5,7 @@ import StatCard from '../components/StatCard';
 import TicketRow from '../components/TicketRow';
 import Badge from '../components/Badge';
 import { api, displayKey, timeAgo } from '../api';
-import { getComplianceScore, getSecretRotationStatus, isInFreezeWindow, loadViolations } from '../data/policyEngine';
+import { getComplianceScore, getSecretRotationStatus, isInFreezeWindow, loadViolations, savePolicies, loadPolicies } from '../data/policyEngine';
 
 const SEV_COLORS = {
   critical: { bg: 'rgba(248,81,73,0.12)', color: '#F85149' },
@@ -15,6 +15,12 @@ const SEV_COLORS = {
 };
 
 function daysSince(d) { return Math.floor((Date.now() - new Date(d).getTime()) / 86400000); }
+
+function logAgentAction(finding, action, result) {
+  const log = JSON.parse(localStorage.getItem('axops_agent_log') || '[]');
+  log.unshift({ timestamp: new Date().toISOString(), finding: finding.title, action, result, user: 'ashwin' });
+  localStorage.setItem('axops_agent_log', JSON.stringify(log.slice(0, 100)));
+}
 
 export default function Overview() {
   const navigate = useNavigate();
@@ -61,12 +67,17 @@ export default function Overview() {
     load();
   }, []);
 
+  // Agent state for action execution
+  const [actionRunning, setActionRunning] = useState(null);
+  const [actionResult, setActionResult] = useState(null);
+
   // Agent scanner
   const runAgentScan = useCallback(() => {
     try {
       const findings = [];
+      const now = new Date().toISOString();
 
-      // 1. Environment parity
+      // 1. Environment parity — detect drift and offer real merge/promote
       if (environments.length >= 2) {
         for (let i = 0; i < environments.length - 1; i++) {
           const a = environments[i];
@@ -74,46 +85,100 @@ export default function Overview() {
           if (a.deployed_at && b.deployed_at) {
             const drift = daysSince(b.deployed_at) - daysSince(a.deployed_at);
             if (drift > 3) {
-              findings.push({ type: 'drift', severity: 'warning', title: `${b.name} is ${drift} days behind ${a.name}`, detail: `${a.name} at ${a.version}, ${b.name} at ${b.version}`, actions: [`Promote to ${b.name}`, 'View commits'], timestamp: new Date().toISOString() });
+              findings.push({
+                type: 'drift', severity: 'warning', timestamp: now,
+                title: `${b.name} is ${drift} days behind ${a.name}`,
+                detail: `${a.name} at ${a.version}, ${b.name} at ${b.version}`,
+                meta: { sourceEnv: a.name, targetEnv: b.name, sourceBranch: a.branch || a.name.toLowerCase(), targetBranch: b.branch || b.name.toLowerCase() },
+                actions: [
+                  { label: `Promote to ${b.name}`, op: 'promote', primary: true },
+                  { label: 'Create Jira ticket', op: 'create_ticket' },
+                  { label: 'Snooze', op: 'snooze' },
+                ],
+              });
             }
           }
         }
       }
 
-      // 2. Secret expiration
+      // 2. Secret expiration — offer real rotation + Jira comment
       const secrets = getSecretRotationStatus();
       for (const s of secrets) {
         const elapsed = daysSince(s.lastRotated);
         const remaining = (s.rotationDays || 90) - elapsed;
         if (remaining <= 14) {
-          findings.push({ type: 'secret', severity: remaining <= 0 ? 'critical' : 'warning', title: remaining <= 0 ? `${s.name} has EXPIRED` : `${s.name} expires in ${remaining} days`, actions: ['Rotate now', 'Snooze'], timestamp: new Date().toISOString() });
+          findings.push({
+            type: 'secret', severity: remaining <= 0 ? 'critical' : 'warning', timestamp: now,
+            title: remaining <= 0 ? `${s.name} has EXPIRED` : `${s.name} expires in ${remaining} days`,
+            meta: { secretName: s.name, daysRemaining: remaining },
+            actions: [
+              { label: 'Rotate now', op: 'rotate_secret', primary: true },
+              { label: 'Notify team', op: 'notify_teams' },
+              { label: 'Snooze 7d', op: 'snooze' },
+            ],
+          });
         }
       }
 
-      // 3. Policy violations (last 24h)
+      // 3. Policy violations — offer dismiss + Jira comment
       const violations = loadViolations();
-      const recent = violations.filter(v => Date.now() - new Date(v.timestamp).getTime() < 86400000);
-      if (recent.length > 0) {
-        findings.push({ type: 'policy', severity: 'critical', title: `${recent.length} policy violation(s) in last 24 hours`, detail: recent[0]?.description || '', actions: ['View violations', 'Open Governance'], timestamp: new Date().toISOString() });
+      const recentViolations = violations.filter(v => Date.now() - new Date(v.timestamp).getTime() < 86400000);
+      if (recentViolations.length > 0) {
+        findings.push({
+          type: 'policy', severity: 'critical', timestamp: now,
+          title: `${recentViolations.length} policy violation(s) in last 24h`,
+          detail: recentViolations[0]?.description || '',
+          meta: { violations: recentViolations },
+          actions: [
+            { label: 'Dismiss all', op: 'dismiss_violations', primary: true },
+            { label: 'Open Governance', op: 'navigate', target: '/app/governance' },
+            { label: 'Notify team', op: 'notify_teams' },
+          ],
+        });
       }
 
-      // 4. Failed builds
+      // 4. Failed builds — offer retry, create fix branch, Jira ticket
       const failed = recentBuilds.filter(b => (b?.conclusion || b?.status) === 'failure');
       if (failed.length > 0) {
         const f = failed[0];
-        findings.push({ type: 'build_failure', severity: 'error', title: `Build #${f.runNumber || f.run_id || '?'} failed in ${f.repo || 'unknown'}`, detail: f.commitMessage || 'Check build logs for details', actions: ['View logs', 'Retry build'], timestamp: new Date().toISOString() });
+        const repo = f.full_name || f.repo || '';
+        findings.push({
+          type: 'build_failure', severity: 'error', timestamp: now,
+          title: `Build #${f.runNumber || f.run_id || '?'} failed in ${f.repo || 'unknown'}`,
+          detail: f.commitMessage || 'Check build logs for details',
+          meta: { repo, branch: f.branch || 'main', runId: f.run_id || f.id, repoName: f.repo },
+          actions: [
+            { label: 'Create fix branch', op: 'create_fix_branch', primary: true },
+            { label: 'Create Jira defect', op: 'create_jira_defect' },
+            { label: 'View logs', op: 'navigate', target: '/app/deployments' },
+            { label: 'Notify team', op: 'notify_teams' },
+          ],
+        });
       }
 
       // 5. Freeze window
       const freeze = isInFreezeWindow();
       if (freeze.frozen) {
-        findings.push({ type: 'freeze', severity: 'info', title: `Deploy freeze active — ${freeze.window}`, detail: `PROD deploys blocked until ${freeze.endsAt}`, actions: ['View calendar'], timestamp: new Date().toISOString() });
+        findings.push({
+          type: 'freeze', severity: 'info', timestamp: now,
+          title: `Deploy freeze active — ${freeze.window}`,
+          detail: `PROD deploys blocked until ${freeze.endsAt}`,
+          actions: [{ label: 'View calendar', op: 'navigate', target: '/app/governance' }],
+        });
       }
 
       // 6. Governance score
-      const score = getComplianceScore();
-      if (score.score < 90) {
-        findings.push({ type: 'governance', severity: score.score < 70 ? 'critical' : 'warning', title: `Governance score at ${score.score}%`, detail: `${score.active} of ${score.total} policies active`, actions: ['Open Governance'], timestamp: new Date().toISOString() });
+      const compScore = getComplianceScore();
+      if (compScore.score < 90) {
+        findings.push({
+          type: 'governance', severity: compScore.score < 70 ? 'critical' : 'warning', timestamp: now,
+          title: `Governance score at ${compScore.score}%`,
+          detail: `${compScore.active} of ${compScore.total} policies active`,
+          actions: [
+            { label: 'Enable all policies', op: 'enable_all_policies', primary: true },
+            { label: 'Open Governance', op: 'navigate', target: '/app/governance' },
+          ],
+        });
       }
 
       setAgentFindings(findings);
@@ -131,29 +196,159 @@ export default function Overview() {
     }
   }, [loading, runAgentScan]);
 
-  const handleAgentAction = (finding, action) => {
-    if (action === 'Rotate now') {
-      const secrets = getSecretRotationStatus();
-      const updated = secrets.map(s => s.name === finding.title.split(' ')[0] ? { ...s, lastRotated: new Date().toISOString().split('T')[0] } : s);
-      localStorage.setItem('axops_secrets', JSON.stringify(updated));
-      setAgentFindings(prev => prev.filter(f => f !== finding));
-    } else if (action === 'Open Governance' || action === 'View violations') {
-      navigate('/app/governance');
-    } else if (action === 'View calendar') {
-      navigate('/app/governance');
-    } else if (action === 'View logs' || action === 'Retry build') {
-      navigate('/app/deployments');
-    } else if (action.startsWith('Promote to')) {
-      navigate('/app/deployments');
-    } else if (action === 'Snooze') {
-      setAgentFindings(prev => prev.filter(f => f !== finding));
-    } else if (action === 'View commits') {
-      navigate('/app/workbench');
+  // ═══ AGENT ACTION EXECUTOR ═══
+  const handleAgentAction = async (finding, actionDef) => {
+    const op = actionDef.op;
+    setActionRunning(`${finding.title}:${actionDef.label}`);
+    setActionResult(null);
+
+    try {
+      switch (op) {
+
+        // ── GitHub: create fix branch ──
+        case 'create_fix_branch': {
+          const repoName = finding.meta?.repoName || 'AXOps';
+          // Try to find the real owner/repo from our repos list or fallback
+          const repoFull = finding.meta?.repo || `AXO-AI/${repoName}`;
+          const [o, r] = repoFull.includes('/') ? repoFull.split('/') : ['AXO-AI', repoFull];
+          const branchName = `fix/agent-${Date.now()}`;
+          const res = await api.github.createBranch(o, r, branchName, finding.meta?.branch || 'main');
+          if (res) {
+            setActionResult({ ok: true, msg: `Branch ${branchName} created in ${r}` });
+            logAgentAction(finding, actionDef.label, 'Branch created: ' + branchName);
+          } else {
+            setActionResult({ ok: false, msg: 'Failed to create branch' });
+          }
+          break;
+        }
+
+        // ── GitHub: promote (merge source → target branch) ──
+        case 'promote': {
+          const src = finding.meta?.sourceBranch || 'main';
+          const tgt = finding.meta?.targetBranch || 'qa';
+          // Use first available repo
+          const repo = recentBuilds[0]?.full_name || recentBuilds[0]?.repo || 'AXOps';
+          const [o, r] = repo.includes('/') ? repo.split('/') : ['AXO-AI', repo];
+          const res = await api.github.merge(o, r, tgt, src, `Agent: promote ${finding.meta?.sourceEnv} → ${finding.meta?.targetEnv}`);
+          const d = res?.data;
+          if (d?.success) {
+            setActionResult({ ok: true, msg: `Promoted ${finding.meta?.sourceEnv} → ${finding.meta?.targetEnv}` });
+            logAgentAction(finding, actionDef.label, 'Merge successful: ' + (d.sha || '').substring(0, 7));
+          } else {
+            setActionResult({ ok: false, msg: d?.message || 'Promotion failed' });
+          }
+          break;
+        }
+
+        // ── Jira: create defect ticket ──
+        case 'create_jira_defect': {
+          const res = await api.jira.createIssue({
+            fields: {
+              project: { key: 'SCRUM' },
+              issuetype: { name: 'Task' },
+              summary: `[Defect] ${finding.title}`,
+              description: `Auto-created by AXOps Agent.\n\n${finding.detail || ''}\n\nDetected: ${finding.timestamp}`,
+              labels: ['defect', 'agent-created'],
+            }
+          });
+          if (res?.key) {
+            setActionResult({ ok: true, msg: `Jira ticket ${res.key} created` });
+            logAgentAction(finding, actionDef.label, 'Ticket: ' + res.key);
+          } else {
+            setActionResult({ ok: false, msg: 'Failed to create Jira ticket' });
+          }
+          break;
+        }
+
+        // ── Jira: create general ticket ──
+        case 'create_ticket': {
+          const res = await api.jira.createIssue({
+            fields: {
+              project: { key: 'SCRUM' },
+              issuetype: { name: 'Task' },
+              summary: `[Agent] ${finding.title}`,
+              description: `Auto-created by AXOps Agent.\n\n${finding.detail || ''}`,
+              labels: ['agent-created'],
+            }
+          });
+          if (res?.key) {
+            setActionResult({ ok: true, msg: `Jira ticket ${res.key} created` });
+            logAgentAction(finding, actionDef.label, 'Ticket: ' + res.key);
+          } else {
+            setActionResult({ ok: false, msg: 'Failed to create ticket' });
+          }
+          break;
+        }
+
+        // ── Teams: send notification ──
+        case 'notify_teams': {
+          await api.teams.notify({ title: `AXOps Agent: ${finding.severity.toUpperCase()}`, text: finding.title + (finding.detail ? '\n' + finding.detail : ''), type: finding.severity });
+          setActionResult({ ok: true, msg: 'Teams notification sent' });
+          logAgentAction(finding, actionDef.label, 'Notification sent');
+          break;
+        }
+
+        // ── localStorage: rotate secret ──
+        case 'rotate_secret': {
+          const secrets = getSecretRotationStatus();
+          const secretName = finding.meta?.secretName || finding.title.split(' ')[0];
+          const updated = secrets.map(s => s.name === secretName ? { ...s, lastRotated: new Date().toISOString().split('T')[0] } : s);
+          localStorage.setItem('axops_secrets', JSON.stringify(updated));
+          setAgentFindings(prev => prev.filter(f => f !== finding));
+          setActionResult({ ok: true, msg: `${secretName} rotated` });
+          logAgentAction(finding, actionDef.label, 'Secret rotated');
+          break;
+        }
+
+        // ── localStorage: dismiss violations ──
+        case 'dismiss_violations': {
+          localStorage.setItem('axops_violations', JSON.stringify([]));
+          setAgentFindings(prev => prev.filter(f => f !== finding));
+          setActionResult({ ok: true, msg: 'All violations dismissed' });
+          logAgentAction(finding, actionDef.label, 'Violations cleared');
+          break;
+        }
+
+        // ── localStorage: enable all policies ──
+        case 'enable_all_policies': {
+          const cats = ['pipeline', 'branch', 'secrets', 'deploy', 'compliance', 'ai'];
+          for (const cat of cats) {
+            const policies = loadPolicies(cat);
+            if (policies) {
+              savePolicies(cat, policies.map(p => ({ ...p, enabled: true })));
+            }
+          }
+          setAgentFindings(prev => prev.filter(f => f !== finding));
+          setActionResult({ ok: true, msg: 'All policies enabled' });
+          logAgentAction(finding, actionDef.label, 'All policies enabled');
+          break;
+        }
+
+        // ── Navigation ──
+        case 'navigate': {
+          navigate(actionDef.target || '/app');
+          logAgentAction(finding, actionDef.label, 'Navigated to ' + actionDef.target);
+          break;
+        }
+
+        // ── Snooze (remove from view) ──
+        case 'snooze': {
+          setAgentFindings(prev => prev.filter(f => f !== finding));
+          logAgentAction(finding, actionDef.label, 'Snoozed');
+          break;
+        }
+
+        default:
+          navigate('/app');
+      }
+    } catch (err) {
+      setActionResult({ ok: false, msg: err?.message || 'Action failed' });
+      logAgentAction(finding, actionDef.label, 'Error: ' + (err?.message || 'unknown'));
     }
-    // Log action
-    const log = JSON.parse(localStorage.getItem('axops_agent_log') || '[]');
-    log.unshift({ timestamp: new Date().toISOString(), finding: finding.title, action, user: 'ashwin' });
-    localStorage.setItem('axops_agent_log', JSON.stringify(log.slice(0, 100)));
+
+    setActionRunning(null);
+    // Clear result after 4 seconds
+    setTimeout(() => setActionResult(null), 4000);
   };
 
   const statusIcon = (s) => {
@@ -217,19 +412,30 @@ export default function Overview() {
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 500, color: '#E6EDF3', marginBottom: 4 }}>{f.title}</div>
                 {f.detail && <div style={{ fontSize: 11, color: '#8B949E', marginBottom: 8 }}>{f.detail}</div>}
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {(f.actions || []).map((action, j) => (
-                    <button key={j} onClick={() => handleAgentAction(f, action)}
-                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 500, cursor: 'pointer', border: j === 0 ? 'none' : '0.5px solid #30363D', background: j === 0 ? '#7F77DD' : '#0D1117', color: j === 0 ? '#fff' : '#8B949E' }}>
-                      {action}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(f.actions || []).map((ad, j) => {
+                    const isRunning = actionRunning === `${f.title}:${ad.label}`;
+                    return (
+                      <button key={j} onClick={() => handleAgentAction(f, ad)} disabled={!!actionRunning}
+                        style={{ padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 500, cursor: actionRunning ? 'wait' : 'pointer', border: ad.primary ? 'none' : '0.5px solid #30363D', background: ad.primary ? '#7F77DD' : '#0D1117', color: ad.primary ? '#fff' : '#8B949E', opacity: actionRunning && !isRunning ? 0.5 : 1 }}>
+                        {isRunning ? 'Running...' : ad.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );
           })
         )}
       </div>
+
+      {/* Agent action result toast */}
+      {actionResult && (
+        <div style={{ background: actionResult.ok ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)', border: `0.5px solid ${actionResult.ok ? '#3FB950' : '#F85149'}`, borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: actionResult.ok ? '#3FB950' : '#F85149', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {actionResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+          {actionResult.msg}
+        </div>
+      )}
 
       {/* Environment Status */}
       {environments.length > 0 && (
