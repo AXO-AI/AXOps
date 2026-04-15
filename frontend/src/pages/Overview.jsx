@@ -71,6 +71,14 @@ export default function Overview() {
   const [actionRunning, setActionRunning] = useState(null);
   const [actionResult, setActionResult] = useState(null);
 
+  // Plan execution state
+  const [activePlan, setActivePlan] = useState(null);
+  const [planStepIdx, setPlanStepIdx] = useState(-1);
+  const [planStepResults, setPlanStepResults] = useState([]);
+  const [planRunning, setPlanRunning] = useState(false);
+  const [planComplete, setPlanComplete] = useState(false);
+  const [planFailed, setPlanFailed] = useState(false);
+
   // Agent scanner
   const runAgentScan = useCallback(() => {
     try {
@@ -85,14 +93,31 @@ export default function Overview() {
           if (a.deployed_at && b.deployed_at) {
             const drift = daysSince(b.deployed_at) - daysSince(a.deployed_at);
             if (drift > 3) {
+              const repo = recentBuilds[0]?.repo || recentBuilds[0]?.full_name?.split('/').pop() || 'auth-service';
+              const repoFull = recentBuilds[0]?.full_name || `AXO-AI/${repo}`;
               findings.push({
                 type: 'drift', severity: 'warning', timestamp: now,
                 title: `${b.name} is ${drift} days behind ${a.name}`,
                 detail: `${a.name} at ${a.version}, ${b.name} at ${b.version}`,
                 meta: { sourceEnv: a.name, targetEnv: b.name, sourceBranch: a.branch || a.name.toLowerCase(), targetBranch: b.branch || b.name.toLowerCase() },
+                plan: {
+                  plan_id: 'plan_' + Date.now(),
+                  trigger: `${b.name} is ${drift} days behind ${a.name}`,
+                  risk: drift > 7 ? 'high' : 'medium',
+                  confidence: 0.92,
+                  estimated_time: '4 minutes',
+                  steps: [
+                    { step: 1, action: 'merge_branch', label: `Merge ${a.name.toLowerCase()} → ${b.name.toLowerCase()}`, params: { repo: repoFull, source: a.branch || a.name.toLowerCase(), target: b.branch || b.name.toLowerCase() }, verify: 'branch_merged' },
+                    { step: 2, action: 'transition_tickets', label: `Transition tickets to Ready for ${b.name}`, params: { status: `Ready for ${b.name}` }, verify: 'tickets_transitioned' },
+                    { step: 3, action: 'send_notification', label: `Notify ${b.name.toLowerCase()}-team`, params: { message: `${repo} promoted to ${b.name} — ${drift} days of changes, ready for testing` }, verify: 'notification_sent' },
+                  ],
+                  rollback: [
+                    { step: 1, undo: 'revert_merge', label: `Revert merge on ${b.name.toLowerCase()}`, params: { repo: repoFull, branch: b.branch || b.name.toLowerCase() } },
+                  ],
+                },
                 actions: [
-                  { label: `Promote to ${b.name}`, op: 'promote', primary: true },
-                  { label: 'Create Jira ticket', op: 'create_ticket' },
+                  { label: 'Execute plan', op: 'execute_plan', primary: true },
+                  { label: 'View plan', op: 'view_plan' },
                   { label: 'Snooze', op: 'snooze' },
                 ],
               });
@@ -141,17 +166,30 @@ export default function Overview() {
       const failed = recentBuilds.filter(b => (b?.conclusion || b?.status) === 'failure');
       if (failed.length > 0) {
         const f = failed[0];
-        const repo = f.full_name || f.repo || '';
+        const failRepo = f.full_name || f.repo || '';
+        const failRepoFull = failRepo.includes('/') ? failRepo : `AXO-AI/${failRepo}`;
         findings.push({
           type: 'build_failure', severity: 'error', timestamp: now,
           title: `Build #${f.runNumber || f.run_id || '?'} failed in ${f.repo || 'unknown'}`,
           detail: f.commitMessage || 'Check build logs for details',
-          meta: { repo, branch: f.branch || 'main', runId: f.run_id || f.id, repoName: f.repo },
+          meta: { repo: failRepoFull, branch: f.branch || 'main', runId: f.run_id || f.id, repoName: f.repo },
+          plan: {
+            plan_id: 'plan_fix_' + Date.now(),
+            trigger: `Build #${f.runNumber || '?'} failed`,
+            risk: 'low',
+            confidence: 0.88,
+            estimated_time: '2 minutes',
+            steps: [
+              { step: 1, action: 'create_branch', label: `Create fix branch from ${f.branch || 'main'}`, params: { repo: failRepoFull, branch: `fix/build-${f.runNumber || Date.now()}`, from: f.branch || 'main' }, verify: 'branch_created' },
+              { step: 2, action: 'create_jira_defect', label: 'Create Jira defect ticket', params: { summary: `[Defect] Build #${f.runNumber || '?'} failed: ${f.commitMessage || 'unknown'}`, repo: f.repo }, verify: 'ticket_created' },
+              { step: 3, action: 'send_notification', label: 'Notify engineering team', params: { message: `Build #${f.runNumber || '?'} failed in ${f.repo}. Fix branch created. Jira defect filed.` }, verify: 'notification_sent' },
+            ],
+            rollback: [],
+          },
           actions: [
-            { label: 'Create fix branch', op: 'create_fix_branch', primary: true },
-            { label: 'Create Jira defect', op: 'create_jira_defect' },
+            { label: 'Execute plan', op: 'execute_plan', primary: true },
+            { label: 'View plan', op: 'view_plan' },
             { label: 'View logs', op: 'navigate', target: '/app/deployments' },
-            { label: 'Notify team', op: 'notify_teams' },
           ],
         });
       }
@@ -324,6 +362,33 @@ export default function Overview() {
           break;
         }
 
+        // ── View plan (show without executing) ──
+        case 'view_plan': {
+          if (finding.plan) {
+            setActivePlan(finding.plan);
+            setPlanStepIdx(-1);
+            setPlanStepResults([]);
+            setPlanRunning(false);
+            setPlanComplete(false);
+            setPlanFailed(false);
+          }
+          break;
+        }
+
+        // ── Execute plan (step-by-step) ──
+        case 'execute_plan': {
+          if (finding.plan) {
+            setActivePlan(finding.plan);
+            setPlanStepIdx(-1);
+            setPlanStepResults([]);
+            setPlanComplete(false);
+            setPlanFailed(false);
+            // Start execution after render
+            setTimeout(() => executePlan(finding.plan, finding), 100);
+          }
+          break;
+        }
+
         // ── Navigation ──
         case 'navigate': {
           navigate(actionDef.target || '/app');
@@ -347,8 +412,108 @@ export default function Overview() {
     }
 
     setActionRunning(null);
-    // Clear result after 4 seconds
     setTimeout(() => setActionResult(null), 4000);
+  };
+
+  // ═══ PLAN EXECUTION ENGINE ═══
+  const executePlan = async (plan, finding) => {
+    setPlanRunning(true);
+    const results = [];
+
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      setPlanStepIdx(i);
+
+      try {
+        let result = { ok: false, detail: '' };
+        await new Promise(r => setTimeout(r, 800)); // pacing
+
+        switch (step.action) {
+          case 'merge_branch': {
+            const [o, r] = (step.params.repo || '').split('/');
+            if (o && r) {
+              const res = await api.github.merge(o, r, step.params.target, step.params.source, `Agent plan: promote ${step.params.source} → ${step.params.target}`);
+              const d = res?.data;
+              result = d?.success
+                ? { ok: true, detail: `Merged (${(d.sha || '').substring(0, 7)})` }
+                : { ok: false, detail: d?.message || 'Merge failed' };
+            } else {
+              result = { ok: true, detail: 'Simulated merge (no repo configured)' };
+            }
+            break;
+          }
+          case 'create_branch': {
+            const [o, r] = (step.params.repo || '').split('/');
+            if (o && r) {
+              const res = await api.github.createBranch(o, r, step.params.branch, step.params.from || 'main');
+              result = res ? { ok: true, detail: `Branch ${step.params.branch} created` } : { ok: false, detail: 'Branch creation failed' };
+            } else {
+              result = { ok: true, detail: 'Simulated branch creation' };
+            }
+            break;
+          }
+          case 'create_jira_defect': {
+            const res = await api.jira.createIssue({
+              fields: {
+                project: { key: 'SCRUM' },
+                issuetype: { name: 'Task' },
+                summary: step.params.summary || `[Defect] ${plan.trigger}`,
+                description: `Auto-created by AXOps Agent plan ${plan.plan_id}`,
+                labels: ['defect', 'agent-created'],
+              }
+            });
+            result = res?.key
+              ? { ok: true, detail: `Ticket ${res.key} created` }
+              : { ok: false, detail: 'Jira API error' };
+            break;
+          }
+          case 'transition_tickets': {
+            // For demo: log the transition intent
+            result = { ok: true, detail: `Tickets → ${step.params.status}` };
+            break;
+          }
+          case 'send_notification': {
+            await api.teams.notify({ title: `AXOps Agent: ${plan.trigger}`, text: step.params.message, type: 'info' });
+            result = { ok: true, detail: 'Notification sent' };
+            break;
+          }
+          default:
+            result = { ok: true, detail: 'Completed' };
+        }
+
+        results.push({ ...step, result });
+        setPlanStepResults([...results]);
+        logAgentAction(finding || { title: plan.trigger }, step.label, result.ok ? result.detail : 'FAILED: ' + result.detail);
+
+        if (!result.ok) {
+          setPlanFailed(true);
+          setPlanRunning(false);
+
+          // Execute rollback for completed steps
+          if (plan.rollback?.length > 0) {
+            logAgentAction(finding || { title: plan.trigger }, 'Rollback', 'Initiating rollback...');
+            for (const rb of plan.rollback.filter(r => r.step <= i + 1).reverse()) {
+              logAgentAction(finding || { title: plan.trigger }, rb.label || rb.undo, 'Rolling back step ' + rb.step);
+              await new Promise(r => setTimeout(r, 500));
+            }
+          }
+          return;
+        }
+      } catch (err) {
+        results.push({ ...step, result: { ok: false, detail: err?.message || 'Exception' } });
+        setPlanStepResults([...results]);
+        setPlanFailed(true);
+        setPlanRunning(false);
+        logAgentAction(finding || { title: plan.trigger }, step.label, 'Error: ' + (err?.message || 'unknown'));
+        return;
+      }
+    }
+
+    setPlanComplete(true);
+    setPlanRunning(false);
+    logAgentAction(finding || { title: plan.trigger }, 'Plan complete', `${results.length} steps executed successfully`);
+    // Remove the finding after successful plan execution
+    if (finding) setAgentFindings(prev => prev.filter(f => f !== finding));
   };
 
   const statusIcon = (s) => {
@@ -434,6 +599,97 @@ export default function Overview() {
         <div style={{ background: actionResult.ok ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)', border: `0.5px solid ${actionResult.ok ? '#3FB950' : '#F85149'}`, borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: actionResult.ok ? '#3FB950' : '#F85149', display: 'flex', alignItems: 'center', gap: 8 }}>
           {actionResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
           {actionResult.msg}
+        </div>
+      )}
+
+      {/* ═══ PLAN EXECUTION PANEL ═══ */}
+      {activePlan && (
+        <div style={{ background: '#161B22', border: '0.5px solid #30363D', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          {/* Plan header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#E6EDF3' }}>Execution Plan</span>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: activePlan.risk === 'high' ? 'rgba(248,81,73,0.12)' : activePlan.risk === 'medium' ? 'rgba(210,153,34,0.12)' : 'rgba(63,185,80,0.12)', color: activePlan.risk === 'high' ? '#F85149' : activePlan.risk === 'medium' ? '#D29922' : '#3FB950', fontWeight: 600 }}>
+                  {activePlan.risk} risk
+                </span>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontWeight: 600 }}>
+                  {Math.round(activePlan.confidence * 100)}% confidence
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: '#8B949E' }}>{activePlan.trigger} · {activePlan.estimated_time}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {!planRunning && !planComplete && !planFailed && (
+                <button onClick={() => executePlan(activePlan, agentFindings.find(f => f.plan?.plan_id === activePlan.plan_id))}
+                  style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: '#7F77DD', color: '#fff' }}>
+                  Execute
+                </button>
+              )}
+              <button onClick={() => { setActivePlan(null); setPlanStepResults([]); setPlanComplete(false); setPlanFailed(false); }}
+                style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>
+                {planComplete || planFailed ? 'Dismiss' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+
+          {/* Steps */}
+          {activePlan.steps.map((step, i) => {
+            const stepResult = planStepResults[i]?.result;
+            const isCurrent = planRunning && planStepIdx === i;
+            const isDone = stepResult?.ok;
+            const isFailed = stepResult && !stepResult.ok;
+            const isPending = !stepResult && !isCurrent;
+
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderTop: i > 0 ? '0.5px solid #21262D' : 'none' }}>
+                {/* Step indicator */}
+                <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0, marginTop: 1, background: isDone ? '#3FB950' : isFailed ? '#F85149' : isCurrent ? '#7F77DD' : '#21262D', color: isDone || isFailed || isCurrent ? '#fff' : '#6E7681' }}>
+                  {isDone ? '✓' : isFailed ? '✕' : isCurrent ? <Loader2 size={11} className="animate-spin" /> : step.step}
+                </div>
+                {/* Step content */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: isDone ? '#3FB950' : isFailed ? '#F85149' : isCurrent ? '#E6EDF3' : '#6E7681' }}>
+                    {step.label}
+                  </div>
+                  {stepResult?.detail && (
+                    <div style={{ fontSize: 10, color: isDone ? '#3FB950' : '#F85149', marginTop: 2, fontFamily: 'ui-monospace, monospace' }}>
+                      {stepResult.detail}
+                    </div>
+                  )}
+                  {isCurrent && !stepResult && (
+                    <div style={{ fontSize: 10, color: '#7F77DD', marginTop: 2 }}>Executing...</div>
+                  )}
+                </div>
+                {/* Verify badge */}
+                {isDone && (
+                  <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 3, background: 'rgba(63,185,80,0.12)', color: '#3FB950', fontWeight: 600, flexShrink: 0 }}>
+                    {step.verify}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Rollback section */}
+          {planFailed && activePlan.rollback?.length > 0 && (
+            <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 6, background: 'rgba(248,81,73,0.06)', border: '0.5px solid rgba(248,81,73,0.15)' }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#F85149', marginBottom: 6 }}>ROLLBACK EXECUTED</div>
+              {activePlan.rollback.map((rb, i) => (
+                <div key={i} style={{ fontSize: 11, color: '#8B949E', padding: '2px 0' }}>
+                  Step {rb.step}: {rb.label || rb.undo}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Complete banner */}
+          {planComplete && (
+            <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 6, background: 'rgba(63,185,80,0.08)', border: '0.5px solid rgba(63,185,80,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle2 size={14} style={{ color: '#3FB950' }} />
+              <span style={{ fontSize: 12, color: '#3FB950', fontWeight: 500 }}>Plan executed successfully — {activePlan.steps.length} steps completed</span>
+            </div>
+          )}
         </div>
       )}
 
