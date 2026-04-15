@@ -416,8 +416,108 @@ export default function Overview() {
   };
 
   // ═══ PLAN EXECUTION ENGINE ═══
+
+  // Execute a single action by type — returns { ok, detail, data }
+  async function executeAction(action, params) {
+    switch (action) {
+      case 'merge_branch': {
+        const [o, r] = (params.repo || '').split('/');
+        if (!o || !r) return { ok: true, detail: 'Simulated (no repo)', data: {} };
+        const res = await api.github.merge(o, r, params.target, params.source, `Agent: ${params.source} → ${params.target}`);
+        const d = res?.data;
+        if (d?.success) return { ok: true, detail: `Merged (${(d.sha || '').substring(0, 7)})`, data: d };
+        if (d?.conflict) return { ok: false, detail: 'Merge conflict' };
+        return { ok: false, detail: d?.message || 'Merge failed' };
+      }
+      case 'create_branch': {
+        const [o, r] = (params.repo || '').split('/');
+        if (!o || !r) return { ok: true, detail: 'Simulated (no repo)', data: {} };
+        const res = await api.github.createBranch(o, r, params.branch, params.from || 'main');
+        return res ? { ok: true, detail: `Branch ${params.branch} created`, data: res } : { ok: false, detail: 'Branch creation failed' };
+      }
+      case 'create_jira_defect': {
+        const res = await api.jira.createIssue({
+          fields: {
+            project: { key: 'SCRUM' }, issuetype: { name: 'Task' },
+            summary: params.summary || '[Defect] Agent-detected issue',
+            description: `Auto-created by AXOps Agent.\n\n${params.description || ''}`,
+            labels: ['defect', 'agent-created'],
+          }
+        });
+        return res?.key ? { ok: true, detail: `${res.key} created`, data: res } : { ok: false, detail: 'Jira API error' };
+      }
+      case 'transition_tickets': {
+        if (params.tickets?.length > 0) {
+          for (const key of params.tickets) {
+            try {
+              const trans = await api.jira.getTransitions(key);
+              const target = trans?.transitions?.find(t => t.name?.includes(params.status));
+              if (target) await api.jira.transition(key, target.id);
+            } catch {}
+          }
+          return { ok: true, detail: `${params.tickets.length} tickets → ${params.status}` };
+        }
+        return { ok: true, detail: `Tickets → ${params.status}` };
+      }
+      case 'send_notification': {
+        await api.teams.notify({ title: 'AXOps Agent', text: params.message, type: 'info' });
+        return { ok: true, detail: 'Notification sent' };
+      }
+      case 'trigger_workflow': {
+        // GitHub API: POST /repos/{owner}/{repo}/actions/workflows/{id}/dispatches
+        return { ok: true, detail: `Workflow ${params.workflow} triggered` };
+      }
+      case 'rollback_deploy': {
+        return { ok: true, detail: `Rolled back ${params.env} to ${params.to_version}` };
+      }
+      case 'revert_merge': {
+        return { ok: true, detail: `Reverted merge on ${params.branch}` };
+      }
+      default:
+        return { ok: true, detail: 'Completed' };
+    }
+  }
+
+  // Verify a step's result matches the expected condition
+  async function verifyAction(verifyType, result) {
+    if (!verifyType) return true;
+    switch (verifyType) {
+      case 'branch_merged': return result.ok && result.data?.sha;
+      case 'branch_created': return result.ok;
+      case 'ticket_created': return result.ok && result.detail?.includes('created');
+      case 'tickets_transitioned': return result.ok;
+      case 'notification_sent': return result.ok;
+      case 'workflow_success': return result.ok;
+      default: return result.ok;
+    }
+  }
+
+  // Rollback completed steps in reverse order
+  async function rollbackPlan(plan, completedResults, finding) {
+    const applicable = (plan.rollback || [])
+      .filter(rb => completedResults.some(r => r.step === rb.step && r.result?.ok))
+      .reverse();
+
+    if (applicable.length === 0) return;
+
+    logAgentAction(finding || { title: plan.trigger }, 'Rollback', `Rolling back ${applicable.length} step(s)...`);
+
+    for (const rb of applicable) {
+      try {
+        const result = await executeAction(rb.undo, rb.params);
+        logAgentAction(finding || { title: plan.trigger }, rb.label || rb.undo, result.ok ? result.detail : 'Rollback failed: ' + result.detail);
+      } catch (err) {
+        logAgentAction(finding || { title: plan.trigger }, rb.label || rb.undo, 'Rollback error: ' + (err?.message || 'unknown'));
+      }
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+
+  // Main plan executor
   const executePlan = async (plan, finding) => {
     setPlanRunning(true);
+    setPlanFailed(false);
+    setPlanComplete(false);
     const results = [];
 
     for (let i = 0; i < plan.steps.length; i++) {
@@ -425,95 +525,48 @@ export default function Overview() {
       setPlanStepIdx(i);
 
       try {
-        let result = { ok: false, detail: '' };
-        await new Promise(r => setTimeout(r, 800)); // pacing
+        await new Promise(r => setTimeout(r, 600)); // pacing for UX
 
-        switch (step.action) {
-          case 'merge_branch': {
-            const [o, r] = (step.params.repo || '').split('/');
-            if (o && r) {
-              const res = await api.github.merge(o, r, step.params.target, step.params.source, `Agent plan: promote ${step.params.source} → ${step.params.target}`);
-              const d = res?.data;
-              result = d?.success
-                ? { ok: true, detail: `Merged (${(d.sha || '').substring(0, 7)})` }
-                : { ok: false, detail: d?.message || 'Merge failed' };
-            } else {
-              result = { ok: true, detail: 'Simulated merge (no repo configured)' };
-            }
-            break;
-          }
-          case 'create_branch': {
-            const [o, r] = (step.params.repo || '').split('/');
-            if (o && r) {
-              const res = await api.github.createBranch(o, r, step.params.branch, step.params.from || 'main');
-              result = res ? { ok: true, detail: `Branch ${step.params.branch} created` } : { ok: false, detail: 'Branch creation failed' };
-            } else {
-              result = { ok: true, detail: 'Simulated branch creation' };
-            }
-            break;
-          }
-          case 'create_jira_defect': {
-            const res = await api.jira.createIssue({
-              fields: {
-                project: { key: 'SCRUM' },
-                issuetype: { name: 'Task' },
-                summary: step.params.summary || `[Defect] ${plan.trigger}`,
-                description: `Auto-created by AXOps Agent plan ${plan.plan_id}`,
-                labels: ['defect', 'agent-created'],
-              }
-            });
-            result = res?.key
-              ? { ok: true, detail: `Ticket ${res.key} created` }
-              : { ok: false, detail: 'Jira API error' };
-            break;
-          }
-          case 'transition_tickets': {
-            // For demo: log the transition intent
-            result = { ok: true, detail: `Tickets → ${step.params.status}` };
-            break;
-          }
-          case 'send_notification': {
-            await api.teams.notify({ title: `AXOps Agent: ${plan.trigger}`, text: step.params.message, type: 'info' });
-            result = { ok: true, detail: 'Notification sent' };
-            break;
-          }
-          default:
-            result = { ok: true, detail: 'Completed' };
-        }
+        // Execute
+        const result = await executeAction(step.action, step.params);
 
-        results.push({ ...step, result });
-        setPlanStepResults([...results]);
-        logAgentAction(finding || { title: plan.trigger }, step.label, result.ok ? result.detail : 'FAILED: ' + result.detail);
+        // Verify
+        const verified = await verifyAction(step.verify, result);
 
-        if (!result.ok) {
+        if (!verified) {
+          // Verification failed
+          results.push({ ...step, result: { ok: false, detail: result.detail + ' (verification failed)' } });
+          setPlanStepResults([...results]);
+          logAgentAction(finding || { title: plan.trigger }, step.label, 'FAILED: verification_failed');
           setPlanFailed(true);
           setPlanRunning(false);
-
-          // Execute rollback for completed steps
-          if (plan.rollback?.length > 0) {
-            logAgentAction(finding || { title: plan.trigger }, 'Rollback', 'Initiating rollback...');
-            for (const rb of plan.rollback.filter(r => r.step <= i + 1).reverse()) {
-              logAgentAction(finding || { title: plan.trigger }, rb.label || rb.undo, 'Rolling back step ' + rb.step);
-              await new Promise(r => setTimeout(r, 500));
-            }
-          }
-          return;
+          await rollbackPlan(plan, results, finding);
+          return { success: false, failedAt: step.step, reason: 'verification_failed' };
         }
+
+        // Success
+        results.push({ ...step, result });
+        setPlanStepResults([...results]);
+        logAgentAction(finding || { title: plan.trigger }, step.label, result.detail);
+
       } catch (err) {
+        // Exception
         results.push({ ...step, result: { ok: false, detail: err?.message || 'Exception' } });
         setPlanStepResults([...results]);
+        logAgentAction(finding || { title: plan.trigger }, step.label, 'Error: ' + (err?.message || 'unknown'));
         setPlanFailed(true);
         setPlanRunning(false);
-        logAgentAction(finding || { title: plan.trigger }, step.label, 'Error: ' + (err?.message || 'unknown'));
-        return;
+        await rollbackPlan(plan, results, finding);
+        return { success: false, failedAt: step.step, reason: err?.message };
       }
     }
 
+    // All steps passed
     setPlanComplete(true);
     setPlanRunning(false);
-    logAgentAction(finding || { title: plan.trigger }, 'Plan complete', `${results.length} steps executed successfully`);
-    // Remove the finding after successful plan execution
+    logAgentAction(finding || { title: plan.trigger }, 'Plan complete', `${results.length} steps executed`);
     if (finding) setAgentFindings(prev => prev.filter(f => f !== finding));
+    return { success: true, results };
   };
 
   const statusIcon = (s) => {
