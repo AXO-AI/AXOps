@@ -77,8 +77,14 @@ export default function Sidebar() {
         ))}
       </nav>
 
+      {/* Agent status */}
+      <div style={{ padding: '8px 14px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#6E7681' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3FB950', animation: 'pulse 2s infinite' }} />
+        Agent active
+      </div>
+
       {/* Footer */}
-      <div style={{ padding: '12px 16px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, color: '#484F58' }}>
+      <div style={{ padding: '8px 16px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, color: '#484F58' }}>
         <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3FB950' }} />
         All systems operational
       </div>
