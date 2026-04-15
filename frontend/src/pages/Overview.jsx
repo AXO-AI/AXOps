@@ -622,24 +622,112 @@ export default function Overview() {
         ) : (
           agentFindings.map((f, i) => {
             const sev = SEV_COLORS[f.severity] || SEV_COLORS.info;
+            const plan = f.plan;
+            const isThisPlanActive = activePlan?.plan_id === plan?.plan_id;
+            const riskColors = { high: '#F85149', medium: '#D29922', low: '#3FB950' };
+
             return (
-              <div key={i} style={{ background: '#161B22', border: '0.5px solid #30363D', borderLeft: `3px solid ${sev.color}`, borderRadius: '0 8px 8px 0', padding: '12px 14px', marginBottom: 6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: sev.bg, color: sev.color, fontWeight: 600 }}>{f.severity.toUpperCase()}</span>
-                  <span style={{ fontSize: 10, color: '#6E7681' }}>{timeAgo(f.timestamp)}</span>
+              <div key={i} style={{ background: '#161B22', border: '0.5px solid #30363D', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
+                  <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: sev.bg, color: sev.color, fontWeight: 700, textTransform: 'uppercase' }}>
+                    {f.severity === 'warning' ? 'MEDIUM RISK' : f.severity === 'critical' ? 'HIGH RISK' : f.severity === 'error' ? 'ERROR' : 'INFO'}
+                  </span>
+                  <span style={{ fontSize: 10, color: '#484F58' }}>{timeAgo(f.timestamp)}</span>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#E6EDF3', marginBottom: 4 }}>{f.title}</div>
-                {f.detail && <div style={{ fontSize: 11, color: '#8B949E', marginBottom: 8 }}>{f.detail}</div>}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {(f.actions || []).map((ad, j) => {
+
+                {/* Title + detail */}
+                <div style={{ padding: '0 14px 10px' }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#E6EDF3', marginBottom: 3 }}>{f.title}</div>
+                  {f.detail && <div style={{ fontSize: 11, color: '#8B949E' }}>{f.detail}</div>}
+                </div>
+
+                {/* Inline plan table */}
+                {plan && (
+                  <div style={{ margin: '0 14px 10px', border: '0.5px solid #21262D', borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ padding: '6px 10px', fontSize: 9, fontWeight: 700, color: '#484F58', letterSpacing: 0.5, textTransform: 'uppercase', background: '#0D1117', borderBottom: '0.5px solid #21262D' }}>
+                      Execution plan
+                    </div>
+                    {plan.steps.map((step, si) => {
+                      const sr = isThisPlanActive ? planStepResults[si]?.result : null;
+                      const isCurr = isThisPlanActive && planRunning && planStepIdx === si;
+                      const isDone = sr?.ok;
+                      const isFail = sr && !sr.ok;
+                      return (
+                        <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderBottom: si < plan.steps.length - 1 ? '0.5px solid #21262D' : 'none', background: isCurr ? 'rgba(127,119,221,0.04)' : 'transparent' }}>
+                          <span style={{ width: 18, fontSize: 10, fontWeight: 600, color: '#484F58', textAlign: 'center', flexShrink: 0 }}>{step.step}</span>
+                          <span style={{ flex: 1, fontSize: 11, color: isDone ? '#3FB950' : isFail ? '#F85149' : '#C9D1D9' }}>{step.label}</span>
+                          <span style={{ fontSize: 10, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, color: isDone ? '#3FB950' : isFail ? '#F85149' : isCurr ? '#7F77DD' : '#484F58' }}>
+                            {isDone ? '✓ done' : isFail ? '✕ failed' : isCurr ? <><Loader2 size={10} className="animate-spin" /> running</> : '○ pending'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Plan metadata */}
+                {plan && (
+                  <div style={{ padding: '0 14px 10px', display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 10, color: '#6E7681' }}>
+                    <span>Estimated: {plan.estimated_time}</span>
+                    <span>Confidence: {Math.round(plan.confidence * 100)}%</span>
+                    <span>Rollback: {plan.rollback?.length > 0 ? 'automatic if any step fails' : 'none'}</span>
+                  </div>
+                )}
+
+                {/* Rollback info (on failure) */}
+                {isThisPlanActive && planFailed && plan?.rollback?.length > 0 && (
+                  <div style={{ margin: '0 14px 10px', padding: '8px 10px', borderRadius: 6, background: 'rgba(248,81,73,0.06)', border: '0.5px solid rgba(248,81,73,0.15)' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: '#F85149', marginBottom: 4 }}>ROLLBACK EXECUTED</div>
+                    {plan.rollback.map((rb, ri) => (
+                      <div key={ri} style={{ fontSize: 10, color: '#8B949E', padding: '1px 0' }}>Step {rb.step}: {rb.label || rb.undo}</div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Complete banner */}
+                {isThisPlanActive && planComplete && (
+                  <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 6, background: 'rgba(63,185,80,0.08)', border: '0.5px solid rgba(63,185,80,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CheckCircle2 size={13} style={{ color: '#3FB950' }} />
+                    <span style={{ fontSize: 11, color: '#3FB950', fontWeight: 500 }}>Plan executed — {plan.steps.length} steps completed</span>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 6, padding: '0 14px 12px' }}>
+                  {plan && !isThisPlanActive && !planRunning && (
+                    <button onClick={() => handleAgentAction(f, { label: 'Execute plan', op: 'execute_plan', primary: true })}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: '#7F77DD', color: '#fff' }}>
+                      Approve &amp; execute
+                    </button>
+                  )}
+                  {plan && !isThisPlanActive && !planRunning && (
+                    <button onClick={() => handleAgentAction(f, { label: 'View plan', op: 'view_plan' })}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>
+                      Modify plan
+                    </button>
+                  )}
+                  {isThisPlanActive && (planComplete || planFailed) && (
+                    <button onClick={() => { setActivePlan(null); setPlanStepResults([]); setPlanComplete(false); setPlanFailed(false); if (planComplete) setAgentFindings(prev => prev.filter(x => x !== f)); }}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>
+                      Dismiss
+                    </button>
+                  )}
+                  {!plan && (f.actions || []).map((ad, j) => {
                     const isRunning = actionRunning === `${f.title}:${ad.label}`;
                     return (
                       <button key={j} onClick={() => handleAgentAction(f, ad)} disabled={!!actionRunning}
-                        style={{ padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 500, cursor: actionRunning ? 'wait' : 'pointer', border: ad.primary ? 'none' : '0.5px solid #30363D', background: ad.primary ? '#7F77DD' : '#0D1117', color: ad.primary ? '#fff' : '#8B949E', opacity: actionRunning && !isRunning ? 0.5 : 1 }}>
+                        style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: ad.primary ? 600 : 500, cursor: actionRunning ? 'wait' : 'pointer', border: ad.primary ? 'none' : '0.5px solid #30363D', background: ad.primary ? '#7F77DD' : 'transparent', color: ad.primary ? '#fff' : '#8B949E', opacity: actionRunning && !isRunning ? 0.5 : 1 }}>
                         {isRunning ? 'Running...' : ad.label}
                       </button>
                     );
                   })}
+                  {!plan && (
+                    <button onClick={() => setAgentFindings(prev => prev.filter(x => x !== f))}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#484F58', border: '0.5px solid #21262D' }}>
+                      Dismiss
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -652,97 +740,6 @@ export default function Overview() {
         <div style={{ background: actionResult.ok ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)', border: `0.5px solid ${actionResult.ok ? '#3FB950' : '#F85149'}`, borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: actionResult.ok ? '#3FB950' : '#F85149', display: 'flex', alignItems: 'center', gap: 8 }}>
           {actionResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
           {actionResult.msg}
-        </div>
-      )}
-
-      {/* ═══ PLAN EXECUTION PANEL ═══ */}
-      {activePlan && (
-        <div style={{ background: '#161B22', border: '0.5px solid #30363D', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-          {/* Plan header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#E6EDF3' }}>Execution Plan</span>
-                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: activePlan.risk === 'high' ? 'rgba(248,81,73,0.12)' : activePlan.risk === 'medium' ? 'rgba(210,153,34,0.12)' : 'rgba(63,185,80,0.12)', color: activePlan.risk === 'high' ? '#F85149' : activePlan.risk === 'medium' ? '#D29922' : '#3FB950', fontWeight: 600 }}>
-                  {activePlan.risk} risk
-                </span>
-                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontWeight: 600 }}>
-                  {Math.round(activePlan.confidence * 100)}% confidence
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: '#8B949E' }}>{activePlan.trigger} · {activePlan.estimated_time}</div>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {!planRunning && !planComplete && !planFailed && (
-                <button onClick={() => executePlan(activePlan, agentFindings.find(f => f.plan?.plan_id === activePlan.plan_id))}
-                  style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: '#7F77DD', color: '#fff' }}>
-                  Execute
-                </button>
-              )}
-              <button onClick={() => { setActivePlan(null); setPlanStepResults([]); setPlanComplete(false); setPlanFailed(false); }}
-                style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>
-                {planComplete || planFailed ? 'Dismiss' : 'Cancel'}
-              </button>
-            </div>
-          </div>
-
-          {/* Steps */}
-          {activePlan.steps.map((step, i) => {
-            const stepResult = planStepResults[i]?.result;
-            const isCurrent = planRunning && planStepIdx === i;
-            const isDone = stepResult?.ok;
-            const isFailed = stepResult && !stepResult.ok;
-            const isPending = !stepResult && !isCurrent;
-
-            return (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderTop: i > 0 ? '0.5px solid #21262D' : 'none' }}>
-                {/* Step indicator */}
-                <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0, marginTop: 1, background: isDone ? '#3FB950' : isFailed ? '#F85149' : isCurrent ? '#7F77DD' : '#21262D', color: isDone || isFailed || isCurrent ? '#fff' : '#6E7681' }}>
-                  {isDone ? '✓' : isFailed ? '✕' : isCurrent ? <Loader2 size={11} className="animate-spin" /> : step.step}
-                </div>
-                {/* Step content */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: isDone ? '#3FB950' : isFailed ? '#F85149' : isCurrent ? '#E6EDF3' : '#6E7681' }}>
-                    {step.label}
-                  </div>
-                  {stepResult?.detail && (
-                    <div style={{ fontSize: 10, color: isDone ? '#3FB950' : '#F85149', marginTop: 2, fontFamily: 'ui-monospace, monospace' }}>
-                      {stepResult.detail}
-                    </div>
-                  )}
-                  {isCurrent && !stepResult && (
-                    <div style={{ fontSize: 10, color: '#7F77DD', marginTop: 2 }}>Executing...</div>
-                  )}
-                </div>
-                {/* Verify badge */}
-                {isDone && (
-                  <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 3, background: 'rgba(63,185,80,0.12)', color: '#3FB950', fontWeight: 600, flexShrink: 0 }}>
-                    {step.verify}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Rollback section */}
-          {planFailed && activePlan.rollback?.length > 0 && (
-            <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 6, background: 'rgba(248,81,73,0.06)', border: '0.5px solid rgba(248,81,73,0.15)' }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#F85149', marginBottom: 6 }}>ROLLBACK EXECUTED</div>
-              {activePlan.rollback.map((rb, i) => (
-                <div key={i} style={{ fontSize: 11, color: '#8B949E', padding: '2px 0' }}>
-                  Step {rb.step}: {rb.label || rb.undo}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Complete banner */}
-          {planComplete && (
-            <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 6, background: 'rgba(63,185,80,0.08)', border: '0.5px solid rgba(63,185,80,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CheckCircle2 size={14} style={{ color: '#3FB950' }} />
-              <span style={{ fontSize: 12, color: '#3FB950', fontWeight: 500 }}>Plan executed successfully — {activePlan.steps.length} steps completed</span>
-            </div>
-          )}
         </div>
       )}
 
