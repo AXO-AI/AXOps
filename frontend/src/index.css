@@ -1,63 +1,74 @@
 @import "tailwindcss";
 
 :root {
-  --bg-primary: #0F1117;
-  --bg-secondary: #161B22;
-  --bg-tertiary: #0D1117;
-  --bg-elevated: #1C2128;
-  --bg-card: #161B22;
-  --border: #30363D;
-  --border-secondary: #21262D;
-  --border-hover: #7F77DD;
-  --text-primary: #E6EDF3;
-  --text-secondary: #C9D1D9;
-  --text-tertiary: #8B949E;
-  --text-faint: #6E7681;
-  --text-disabled: #484F58;
-  --accent: #7F77DD;
-  --accent-dark: #534AB7;
-  --accent-light: rgba(127,119,221,0.12);
-  --accent-hover: rgba(127,119,221,0.08);
-  --success: #3FB950;
-  --success-light: rgba(63,185,80,0.12);
-  --warning: #D29922;
-  --warning-light: rgba(210,153,34,0.12);
-  --danger: #F85149;
-  --danger-light: rgba(248,81,73,0.12);
-  --info: #58A6FF;
-  --info-light: rgba(88,166,255,0.12);
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 3px 8px rgba(0,0,0,0.35);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+  --ax-sidebar-bg: #111318;
+  --ax-sidebar-card: #1A1D24;
+  --ax-sidebar-border: #1E2128;
+  --ax-content-bg: #F7F8FA;
+  --ax-surface: #FFFFFF;
+  --ax-border: #DFE1E6;
+  --ax-border-subtle: #ECEEF2;
+  --ax-accent: #4B7BF5;
+  --ax-accent-light: #8BA3E9;
+  --ax-accent-bg: #EDF2FE;
+  --ax-accent-text: #2A5BD7;
+  --ax-text-heading: #1E2028;
+  --ax-text-body: #6C7281;
+  --ax-text-muted: #9CA0AB;
+  --ax-text-disabled: #CDD0D7;
+  --ax-text-inverse: #E8EAF0;
+  --ax-success: #0D9488;
+  --ax-success-bg: #ECFDF5;
+  --ax-success-text: #0D6B5F;
+  --ax-warning: #D97706;
+  --ax-warning-bg: #FFF8EB;
+  --ax-warning-text: #92400E;
+  --ax-error: #DC2626;
+  --ax-error-bg: #FEF2F2;
+  --ax-error-text: #991B1B;
+  --ax-info-bg: #DBEAFE;
+  --ax-info-text: #1E40AF;
+
+  /* Legacy compat — pages using var(--xxx) */
+  --bg-primary: #F7F8FA;
+  --bg-secondary: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-tertiary: #F7F8FA;
+  --border: #DFE1E6;
+  --border-hover: #4B7BF5;
+  --text-primary: #1E2028;
+  --text-secondary: #6C7281;
+  --text-tertiary: #9CA0AB;
+  --text-faint: #CDD0D7;
+  --accent: #4B7BF5;
+  --accent-light: #EDF2FE;
+  --success: #0D9488;
+  --success-light: #ECFDF5;
+  --warning: #D97706;
+  --warning-light: #FFF8EB;
+  --danger: #DC2626;
+  --danger-light: #FEF2F2;
+  --info: #4B7BF5;
+  --info-light: #EDF2FE;
 }
 
 body {
   margin: 0;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--ax-content-bg);
+  color: var(--ax-text-heading);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   font-size: 13px;
 }
 
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #30363D; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #484F58; }
-
-.card-base {
-  background: #161B22;
-  border: 0.5px solid #30363D;
-  border-radius: 8px;
-  transition: border-color 0.15s;
-}
-.card-base:hover {
-  border-color: #484F58;
-}
+::-webkit-scrollbar-thumb { background: #CDD0D7; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9CA0AB; }
 
 .code-dark {
-  background: #0D1117;
-  color: #E6EDF3;
+  background: #111318;
+  color: #E8EAF0;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 

@@ -3,14 +3,7 @@ import { displayKey, typeLabel, statusColor } from '../api';
 import Badge from './Badge';
 
 const typeIcons = { Defect: Bug, Story: BookOpen, Epic: Layers, Task: CheckSquare };
-
-const priorityColors = {
-  Highest: 'var(--danger)',
-  High: '#F0883E',
-  Medium: 'var(--warning)',
-  Low: 'var(--info)',
-  Lowest: 'var(--text-tertiary)',
-};
+const priorityColors = { Highest: '#DC2626', High: '#D97706', Medium: '#D97706', Low: '#4B7BF5', Lowest: '#9CA0AB' };
 
 export default function TicketRow({ issue, onClick }) {
   if (!issue) return null;
@@ -20,28 +13,13 @@ export default function TicketRow({ issue, onClick }) {
   const priority = issue.fields?.priority?.name || '';
 
   return (
-    <div
-      className="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors"
-      style={{ borderBottom: '1px solid var(--border)' }}
-      onClick={() => onClick?.(issue)}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-    >
-      <TypeIcon size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
-      <span className="text-xs font-mono font-medium shrink-0" style={{ color: 'var(--accent)' }}>
-        {displayKey(issue)}
-      </span>
-      <span className="flex-1 text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-        {issue.fields?.summary || ''}
-      </span>
+    <div onClick={() => onClick?.(issue)}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: '0.5px solid #ECEEF2', cursor: onClick ? 'pointer' : 'default', fontSize: 11 }}>
+      <TypeIcon size={14} style={{ color: '#9CA0AB', flexShrink: 0 }} />
+      <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, fontWeight: 600, color: '#4B7BF5', flexShrink: 0 }}>{displayKey(issue)}</span>
+      <span style={{ flex: 1, color: '#1E2028', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{issue.fields?.summary || ''}</span>
       {status && <Badge text={status} color={statusColor(status)} />}
-      {priority && (
-        <span
-          className="w-2.5 h-2.5 rounded-full shrink-0"
-          style={{ background: priorityColors[priority] || 'var(--text-tertiary)' }}
-          title={priority}
-        />
-      )}
+      {priority && <span style={{ width: 6, height: 6, borderRadius: '50%', background: priorityColors[priority] || '#9CA0AB', flexShrink: 0 }} title={priority} />}
     </div>
   );
 }

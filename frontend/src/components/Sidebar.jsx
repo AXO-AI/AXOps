@@ -1,101 +1,74 @@
 import { NavLink } from 'react-router-dom';
 
 const sections = [
-  {
-    label: 'DELIVERY',
-    items: [
-      { to: '/app', text: 'Dashboard', dot: '#3FB950', end: true },
-      { to: '/app/workbench', text: 'Workbench', dot: '#D29922' },
-      { to: '/app/merge', text: 'Merge', dot: '#58A6FF' },
-      { to: '/app/deployments', text: 'Deployments', dot: '#7F77DD' },
-      { to: '/app/pipeline-studio', text: 'Pipeline Studio', dot: '#534AB7', badge: 'new' },
-    ],
-  },
-  {
-    label: 'QUALITY',
-    items: [
-      { to: '/app/security', text: 'Security', dot: '#F85149' },
-      { to: '/app/governance', text: 'Governance', dot: '#D29922', badge: 'new' },
-    ],
-  },
-  {
-    label: 'INTELLIGENCE',
-    items: [
-      { to: '/app/insights', text: 'Insights', dot: '#7F77DD' },
-    ],
-  },
-  {
-    label: 'OPERATIONS',
-    items: [
-      { to: '/app/activity', text: 'Activity', dot: '#58A6FF' },
-      { to: '/app/team', text: 'Team', dot: '#3FB950' },
-      { to: '/app/support', text: 'Support', dot: '#8B949E' },
-      { to: '/app/administration', text: 'Administration', dot: '#6E7681' },
-    ],
-  },
+  { label: 'DELIVERY', items: [
+    { to: '/app', text: 'Dashboard', dot: '#0D9488', end: true },
+    { to: '/app/workbench', text: 'Workbench', dot: '#D97706' },
+    { to: '/app/merge', text: 'Merge', dot: '#4B7BF5' },
+    { to: '/app/deployments', text: 'Deployments', dot: '#8BA3E9' },
+    { to: '/app/pipeline-studio', text: 'Pipeline Studio', dot: '#4B7BF5', badge: 'new' },
+  ]},
+  { label: 'QUALITY', items: [
+    { to: '/app/security', text: 'Security', dot: '#DC2626' },
+    { to: '/app/governance', text: 'Governance', dot: '#D97706', badge: 'new' },
+  ]},
+  { label: 'INTELLIGENCE', items: [
+    { to: '/app/insights', text: 'Insights', dot: '#8BA3E9' },
+  ]},
+  { label: 'OPERATIONS', items: [
+    { to: '/app/activity', text: 'Activity', dot: '#4B7BF5' },
+    { to: '/app/team', text: 'Team', dot: '#0D9488' },
+    { to: '/app/support', text: 'Support', dot: '#6C7281' },
+    { to: '/app/administration', text: 'Administration', dot: '#6C7281' },
+  ]},
 ];
 
 export default function Sidebar() {
+  let agentMode = 'autonomous';
+  try { agentMode = JSON.parse(localStorage.getItem('axops_autonomy_config') || '{}').mode || 'autonomous'; } catch {}
+
   return (
-    <aside style={{ width: 220, background: '#161B22', borderRight: '0.5px solid #30363D', display: 'flex', flexDirection: 'column', height: '100vh', flexShrink: 0 }}>
-      {/* Logo bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px', borderBottom: '0.5px solid #21262D' }}>
-        <div style={{ width: 26, height: 26, borderRadius: 6, background: 'linear-gradient(135deg, #7F77DD 0%, #534AB7 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: -0.5, flexShrink: 0 }}>AX</div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#E6EDF3', letterSpacing: -0.3 }}>AXOps</span>
-        <span style={{ marginLeft: 'auto', fontSize: 8, padding: '1px 5px', borderRadius: 3, background: '#21262D', color: '#6E7681', fontWeight: 600 }}>v7.0</span>
+    <aside style={{ width: 200, background: '#111318', borderRight: '0.5px solid #1E2128', display: 'flex', flexDirection: 'column', height: '100vh', flexShrink: 0 }}>
+      {/* Logo */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '12px 14px', borderBottom: '0.5px solid #1E2128' }}>
+        <div style={{ width: 26, height: 26, borderRadius: 7, background: '#4B7BF5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff', flexShrink: 0 }}>AX</div>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#E8EAF0', letterSpacing: -0.3 }}>AXOps</span>
+        <span style={{ marginLeft: 'auto', fontSize: 7, padding: '2px 5px', borderRadius: 4, background: '#1A1D24', color: '#6C7281', fontWeight: 600 }}>v7.0</span>
+      </div>
+
+      {/* Agent box */}
+      <div style={{ margin: '6px 14px 8px', padding: '6px 8px', background: '#1A1D24', border: '0.5px solid #252830', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4B7BF5', animation: agentMode !== 'off' ? 'pulse 2s infinite' : 'none', flexShrink: 0 }} />
+        <span style={{ fontSize: 9, color: '#8BA3E9' }}>Agent: {agentMode}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 8, color: '#3D4150' }}>47 today</span>
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
+      <nav style={{ flex: 1, overflowY: 'auto', padding: '2px 0' }}>
         {sections.map(sec => (
-          <div key={sec.label} style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#484F58', padding: '0 10px', marginBottom: 4 }}>
-              {sec.label}
-            </div>
+          <div key={sec.label}>
+            <div style={{ fontSize: 7, fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#3D4150', padding: '8px 14px 3px' }}>{sec.label}</div>
             {sec.items.map(item => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
+              <NavLink key={item.to} to={item.to} end={item.end}
                 style={({ isActive }) => ({
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
-                  fontSize: 11, textDecoration: 'none', marginBottom: 1, transition: 'all 0.12s',
-                  color: isActive ? '#E6EDF3' : '#8B949E',
-                  background: isActive ? 'rgba(127,119,221,0.08)' : 'transparent',
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '5px 14px', fontSize: 10, textDecoration: 'none', transition: 'all 0.1s',
+                  color: isActive ? '#E8EAF0' : '#6C7281',
+                  background: isActive ? 'rgba(75,123,245,0.06)' : 'transparent',
                   fontWeight: isActive ? 500 : 400,
-                  borderLeft: isActive ? '2px solid #7F77DD' : '2px solid transparent',
-                })}
-              >
+                  borderLeft: isActive ? '2px solid #4B7BF5' : '2px solid transparent',
+                })}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: item.dot, flexShrink: 0 }} />
                 {item.text}
-                {item.badge && (
-                  <span style={{ marginLeft: 'auto', fontSize: 7, padding: '1px 4px', borderRadius: 3, background: 'rgba(127,119,221,0.15)', color: '#7F77DD', fontWeight: 600 }}>{item.badge}</span>
-                )}
+                {item.badge && <span style={{ marginLeft: 'auto', fontSize: 6, padding: '1px 4px', borderRadius: 3, background: 'rgba(75,123,245,0.12)', color: '#8BA3E9', fontWeight: 600 }}>{item.badge}</span>}
               </NavLink>
             ))}
           </div>
         ))}
       </nav>
 
-      {/* Agent status */}
-      {(() => {
-        try {
-          const cfg = JSON.parse(localStorage.getItem('axops_autonomy_config') || '{}');
-          const mode = cfg.mode || 'autonomous';
-          const modeColor = mode === 'autonomous' ? '#7F77DD' : mode === 'supervised' ? '#3FB950' : '#8B949E';
-          const modeLabel = mode === 'autonomous' ? 'Agent autonomous' : mode === 'supervised' ? 'Agent supervised' : 'Agent off';
-          return (
-            <div style={{ padding: '8px 14px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#6E7681' }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: modeColor, animation: mode !== 'off' ? 'pulse 2s infinite' : 'none' }} />
-              {modeLabel}
-            </div>
-          );
-        } catch { return null; }
-      })()}
-
       {/* Footer */}
-      <div style={{ padding: '8px 16px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, color: '#484F58' }}>
-        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3FB950' }} />
+      <div style={{ padding: '10px 14px', borderTop: '0.5px solid #1E2128', display: 'flex', alignItems: 'center', gap: 5, fontSize: 8, color: '#3D4150' }}>
+        <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#0D9488' }} />
         All systems operational
       </div>
     </aside>
