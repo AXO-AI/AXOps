@@ -7,7 +7,8 @@ import Badge from '../components/Badge';
 import { api, displayKey, timeAgo } from '../api';
 import { getComplianceScore, getSecretRotationStatus, isInFreezeWindow, loadViolations } from '../data/policyEngine';
 import { generatePlan } from '../agent/planGenerator';
-import { executePlan as runPlanEngine } from '../agent/executionEngine';
+import { executePlan as runPlanEngine, autoExecutePlan } from '../agent/executionEngine';
+import { shouldAutoExecute, loadAutonomyConfig } from '../agent/autonomyConfig';
 
 const SEV_COLORS = {
   critical: { bg: 'rgba(248,81,73,0.12)', color: '#F85149' },
@@ -120,10 +121,37 @@ export default function Overview() {
     if (!loading) { runAgentScan(); const iv = setInterval(runAgentScan, 60000); return () => clearInterval(iv); }
   }, [loading, runAgentScan]);
 
-  // Generate plans from findings
+  // Completed plans state
+  const [completedPlans, setCompletedPlans] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('axops_completed_plans') || '[]'); } catch { return []; }
+  });
+
+  // Generate plans from findings and classify by autonomy
   useEffect(() => {
-    const generated = agentFindings.map(f => { const p = generatePlan(f); return p ? { ...p, finding: f } : null; }).filter(Boolean);
+    const generated = agentFindings.map(f => {
+      const p = generatePlan(f);
+      if (!p) return null;
+      const decision = shouldAutoExecute(p);
+      return { ...p, finding: f, autoMode: decision };
+    }).filter(Boolean);
+
     setPlans(generated);
+
+    // Auto-execute low-risk plans
+    generated.filter(p => p.autoMode === 'auto').forEach(plan => {
+      // Skip if already executing or already completed
+      if (executingPlanId) return;
+      autoExecutePlan(plan,
+        (stepNum, status, detail) => {
+          setPlans(prev => prev.map(p => p.id !== plan.id ? p : { ...p, steps: p.steps.map(s => s.step === stepNum ? { ...s, status, detail } : s) }));
+        },
+        (result) => {
+          const completed = { ...plan, result, completedAt: new Date().toISOString(), autoExecuted: true };
+          setCompletedPlans(prev => { const next = [completed, ...prev].slice(0, 20); localStorage.setItem('axops_completed_plans', JSON.stringify(next)); return next; });
+          setTimeout(() => { setPlans(prev => prev.filter(p => p.id !== plan.id)); setAgentFindings(prev => prev.filter(f => f !== plan.finding)); }, 4000);
+        }
+      );
+    });
   }, [agentFindings]);
 
   // Execute a plan using the engine
@@ -212,17 +240,23 @@ export default function Overview() {
             return (
               <div key={plan.id} style={{ background: '#161B22', border: isExec ? '0.5px solid #7F77DD' : '0.5px solid #30363D', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
-                  {isExec ? (
+                  {isExec && plan.autoMode === 'auto' ? (
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(127,119,221,0.15)', color: '#7F77DD', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={9} className="animate-spin" /> AUTO-EXECUTING</span>
+                  ) : isExec ? (
                     <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(127,119,221,0.15)', color: '#7F77DD', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={9} className="animate-spin" /> EXECUTING</span>
                   ) : isDone ? (
                     <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(63,185,80,0.12)', color: '#3FB950', fontWeight: 700 }}>COMPLETED</span>
+                  ) : plan.autoMode === 'block' ? (
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(248,81,73,0.12)', color: '#F85149', fontWeight: 700 }}>REQUIRES APPROVAL</span>
+                  ) : plan.autoMode === 'auto' ? (
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontWeight: 700 }}>AUTO</span>
                   ) : (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: riskBg(plan.risk), color: riskColor(plan.risk), fontWeight: 700 }}>{plan.risk.toUpperCase()} RISK</span>
                       <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontWeight: 600 }}>{plan.steps.length} steps</span>
                     </div>
                   )}
-                  <span style={{ fontSize: 10, color: '#484F58' }}>{isExec ? 'just now' : `${Math.round(plan.confidence * 100)}%`}</span>
+                  <span style={{ fontSize: 10, color: '#484F58' }}>{isExec ? (plan.autoMode === 'auto' ? 'autonomous' : 'just now') : `${Math.round(plan.confidence * 100)}%`}</span>
                 </div>
                 <div style={{ padding: '0 14px 10px' }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#E6EDF3', marginBottom: 3 }}>{plan.trigger}</div>
@@ -246,9 +280,11 @@ export default function Overview() {
                 {isExec && currentStepObj && <div style={{ padding: '0 14px 10px', fontSize: 11, color: '#7F77DD' }}>Step {currentStepObj.step}/{plan.steps.length} — {currentStepObj.label.toLowerCase()}...</div>}
                 {!isExec && !isDone && !isFailed && <div style={{ padding: '0 14px 10px', display: 'flex', gap: 16, fontSize: 10, color: '#6E7681' }}><span>Est: {plan.estimatedTime}</span><span>Rollback: {plan.rollback?.length > 0 ? 'automatic on failure' : 'none'}</span></div>}
                 {isDone && <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 6, background: 'rgba(63,185,80,0.08)', border: '0.5px solid rgba(63,185,80,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}><CheckCircle2 size={13} style={{ color: '#3FB950' }} /><span style={{ fontSize: 11, color: '#3FB950', fontWeight: 500 }}>Plan executed — {plan.steps.length} steps completed</span></div>}
-                <div style={{ display: 'flex', gap: 6, padding: '0 14px 12px' }}>
+                <div style={{ display: 'flex', gap: 6, padding: '0 14px 12px', alignItems: 'center' }}>
                   {isExec && <button onClick={cancelPlan} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'rgba(248,81,73,0.1)', color: '#F85149', border: '0.5px solid rgba(248,81,73,0.3)' }}>Cancel &amp; rollback</button>}
-                  {!isExec && !isDone && !isFailed && <><button onClick={() => handleExecutePlan(plan)} disabled={!!executingPlanId} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: '#7F77DD', color: '#fff', opacity: executingPlanId ? 0.5 : 1 }}>Approve &amp; execute</button><button onClick={() => dismissPlan(plan.id)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>Dismiss</button></>}
+                  {plan.autoMode === 'auto' && !isExec && !isDone && !isFailed && <span style={{ fontSize: 10, color: '#7F77DD' }}>Agent is handling this autonomously</span>}
+                  {plan.autoMode === 'suggest' && !isExec && !isDone && !isFailed && <><button onClick={() => handleExecutePlan(plan)} disabled={!!executingPlanId} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: '#7F77DD', color: '#fff', opacity: executingPlanId ? 0.5 : 1 }}>Approve &amp; execute</button><button onClick={() => dismissPlan(plan.id)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>Dismiss</button></>}
+                  {plan.autoMode === 'block' && !isExec && !isDone && !isFailed && <><button onClick={() => handleExecutePlan(plan)} disabled={!!executingPlanId} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: '#F85149', color: '#fff', opacity: executingPlanId ? 0.5 : 1 }}>Approve &amp; execute</button><button onClick={() => dismissPlan(plan.id)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>Dismiss</button></>}
                   {(isDone || isFailed) && !isExec && <button onClick={() => dismissPlan(plan.id)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: '#8B949E', border: '0.5px solid #30363D' }}>Dismiss</button>}
                 </div>
               </div>
@@ -256,14 +292,31 @@ export default function Overview() {
           })
         )}
 
+        {/* Completed plans feed */}
+        {completedPlans.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: '#484F58', marginBottom: 6 }}>Recently completed</div>
+            {completedPlans.slice(0, 5).map((cp, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '0.5px solid #21262D', fontSize: 10 }}>
+                <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3, background: cp.result?.success ? 'rgba(63,185,80,0.12)' : 'rgba(248,81,73,0.12)', color: cp.result?.success ? '#3FB950' : '#F85149' }}>{cp.result?.success ? 'DONE' : 'FAIL'}</span>
+                {cp.autoExecuted && <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3, background: 'rgba(127,119,221,0.12)', color: '#7F77DD' }}>AUTO</span>}
+                <span style={{ flex: 1, color: '#C9D1D9' }}>{cp.trigger}</span>
+                <span style={{ color: '#6E7681' }}>{cp.steps?.length} steps{cp.result?.duration ? ` · ${Math.round(cp.result.duration / 1000)}s` : ''}</span>
+                <span style={{ color: '#6E7681' }}>{timeAgo(cp.completedAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Agent execution log */}
         {agentLog.length > 0 && (
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: '#484F58', marginBottom: 6 }}>Agent execution log</div>
-            {agentLog.slice(0, 8).map((entry, i) => (
+            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: '#484F58', marginBottom: 6 }}>Agent log</div>
+            {agentLog.slice(0, 6).map((entry, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', borderBottom: '0.5px solid #21262D', fontSize: 10 }}>
                 <span style={{ color: '#6E7681', minWidth: 55 }}>{new Date(entry.timestamp).toLocaleTimeString()}</span>
                 <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3, background: entry.status === 'success' ? 'rgba(63,185,80,0.12)' : entry.status === 'failed' ? 'rgba(248,81,73,0.12)' : 'rgba(127,119,221,0.12)', color: entry.status === 'success' ? '#3FB950' : entry.status === 'failed' ? '#F85149' : '#7F77DD' }}>{entry.status || 'log'}</span>
+                {entry.autoExecuted && <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3, background: 'rgba(127,119,221,0.08)', color: '#7F77DD' }}>auto</span>}
                 <span style={{ flex: 1, color: '#C9D1D9' }}>{entry.trigger || entry.action_name || ''}</span>
                 {entry.steps && <span style={{ color: '#6E7681' }}>{entry.steps} steps{entry.duration ? ` · ${Math.round(entry.duration / 1000)}s` : ''}</span>}
               </div>

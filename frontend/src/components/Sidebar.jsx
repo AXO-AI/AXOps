@@ -78,10 +78,20 @@ export default function Sidebar() {
       </nav>
 
       {/* Agent status */}
-      <div style={{ padding: '8px 14px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#6E7681' }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3FB950', animation: 'pulse 2s infinite' }} />
-        Agent active
-      </div>
+      {(() => {
+        try {
+          const cfg = JSON.parse(localStorage.getItem('axops_autonomy_config') || '{}');
+          const mode = cfg.mode || 'autonomous';
+          const modeColor = mode === 'autonomous' ? '#7F77DD' : mode === 'supervised' ? '#3FB950' : '#8B949E';
+          const modeLabel = mode === 'autonomous' ? 'Agent autonomous' : mode === 'supervised' ? 'Agent supervised' : 'Agent off';
+          return (
+            <div style={{ padding: '8px 14px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#6E7681' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: modeColor, animation: mode !== 'off' ? 'pulse 2s infinite' : 'none' }} />
+              {modeLabel}
+            </div>
+          );
+        } catch { return null; }
+      })()}
 
       {/* Footer */}
       <div style={{ padding: '8px 16px', borderTop: '0.5px solid #21262D', display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, color: '#484F58' }}>

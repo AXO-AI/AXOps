@@ -43,7 +43,7 @@ export function generatePlan(finding) {
     case 'secret': {
       const name = finding.meta?.secretName || 'UNKNOWN';
       return {
-        id, trigger: finding.title, risk: finding.meta?.daysRemaining <= 0 ? 'high' : 'medium',
+        id, trigger: finding.title, risk: 'low',
         confidence: 0.95, estimatedTime: '30 seconds',
         steps: [
           { step: 1, actionKey: 'rotate_secret', label: `Rotate ${name}`, params: { secret_name: name }, status: 'pending' },

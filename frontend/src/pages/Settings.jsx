@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, CheckCircle2, Shield, Layers } from 'lucide-react';
+import { Settings as SettingsIcon, Save, CheckCircle2, Shield, Layers, Bot } from 'lucide-react';
 import { ENV_PROFILES, MOCK_REPO_PROFILES, getRepoProfile, setRepoProfile } from '../data/envProfiles';
 import EnvFlow from '../components/EnvFlow';
 import { api } from '../api';
+import { loadAutonomyConfig, saveAutonomyConfig } from '../agent/autonomyConfig';
+import { ACTIONS } from '../agent/actionRegistry';
 
 const STORAGE_KEY = 'axops_settings';
 
@@ -29,6 +31,7 @@ export default function Settings() {
   const [assignProfile, setAssignProfile] = useState('standard');
   const [assignments, setAssignments] = useState({});
   const [allRepoNames, setAllRepoNames] = useState(Object.keys(MOCK_REPO_PROFILES));
+  const [autonomy, setAutonomy] = useState(loadAutonomyConfig);
 
   useEffect(() => {
     try {
@@ -131,6 +134,7 @@ export default function Settings() {
           { id: 'integrations', label: 'Integrations', icon: SettingsIcon },
           { id: 'profiles', label: 'Profiles', icon: Layers },
           { id: 'policy', label: 'SCA Policy', icon: Shield },
+          { id: 'agent', label: 'Agent', icon: Bot },
         ].map(t => (
           <button
             key={t.id}
@@ -273,6 +277,85 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      {activeTab === 'agent' && (() => {
+        const updateAutonomy = (key, value) => {
+          const next = { ...autonomy, [key]: value };
+          setAutonomy(next);
+          saveAutonomyConfig(next);
+        };
+        const updateOverride = (actionKey, value) => {
+          const next = { ...autonomy, actionOverrides: { ...autonomy.actionOverrides, [actionKey]: value } };
+          setAutonomy(next);
+          saveAutonomyConfig(next);
+        };
+        const updateRateLimit = (key, value) => {
+          const next = { ...autonomy, rateLimits: { ...autonomy.rateLimits, [key]: parseInt(value) || 0 } };
+          setAutonomy(next);
+          saveAutonomyConfig(next);
+        };
+        const selectStyle = { background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '0.5px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 11 };
+
+        return (
+          <div className="space-y-4">
+            {/* Mode */}
+            <div className="rounded-lg overflow-hidden" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
+              <div className="px-4 py-3 text-sm font-semibold flex items-center gap-2" style={{ borderBottom: '0.5px solid var(--border)' }}>
+                <Bot size={14} style={{ color: 'var(--accent)' }} /> Agent Mode
+              </div>
+              <div className="p-4">
+                <div className="flex gap-2 mb-4">
+                  {['off', 'supervised', 'autonomous'].map(m => (
+                    <button key={m} onClick={() => updateAutonomy('mode', m)}
+                      className="px-4 py-2 rounded-lg text-xs font-medium border-none cursor-pointer capitalize"
+                      style={{ background: autonomy.mode === m ? 'var(--accent)' : 'var(--bg-tertiary)', color: autonomy.mode === m ? '#fff' : 'var(--text-tertiary)', border: '0.5px solid var(--border)' }}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {autonomy.mode === 'off' && 'Agent scans but never acts or suggests.'}
+                  {autonomy.mode === 'supervised' && 'Agent suggests everything, human approves all actions.'}
+                  {autonomy.mode === 'autonomous' && 'Agent auto-executes low risk, suggests medium, blocks high.'}
+                </div>
+              </div>
+            </div>
+
+            {/* Rate limits */}
+            <div className="rounded-lg overflow-hidden" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
+              <div className="px-4 py-3 text-xs font-semibold" style={{ borderBottom: '0.5px solid var(--border)', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Rate Limits</div>
+              <div className="p-4 space-y-3">
+                {[
+                  { key: 'maxAutoExecutionsPerHour', label: 'Max auto-executions per hour' },
+                  { key: 'maxActionsPerDay', label: 'Max total actions per day' },
+                  { key: 'cooldownAfterFailure', label: 'Cooldown after failure (seconds)' },
+                ].map(r => (
+                  <div key={r.key} className="flex items-center justify-between">
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{r.label}</span>
+                    <input type="number" style={selectStyle} className="w-20 outline-none" value={autonomy.rateLimits[r.key]} onChange={e => updateRateLimit(r.key, e.target.value)} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Per-action overrides */}
+            <div className="rounded-lg overflow-hidden" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
+              <div className="px-4 py-3 text-xs font-semibold" style={{ borderBottom: '0.5px solid var(--border)', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Per-Action Overrides</div>
+              {Object.entries(ACTIONS).map(([key, action]) => (
+                <div key={key} className="flex items-center gap-3 px-4 py-2" style={{ borderBottom: '0.5px solid #21262D' }}>
+                  <span className="text-xs flex-1" style={{ color: 'var(--text-secondary)' }}>{action.name}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{action.risk}</span>
+                  <select style={selectStyle} value={autonomy.actionOverrides[key] || 'default'} onChange={e => updateOverride(key, e.target.value)}>
+                    <option value="auto">Auto</option>
+                    <option value="suggest">Suggest</option>
+                    <option value="block">Block</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

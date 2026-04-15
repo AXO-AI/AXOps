@@ -116,9 +116,16 @@ function formatResult(result) {
   return '';
 }
 
-export function canAutoExecute(plan) {
-  return plan.steps.every(step => {
-    const actionDef = ACTIONS[step.actionKey];
-    return actionDef?.risk === 'low';
-  });
+export async function autoExecutePlan(plan, onStepUpdate, onComplete) {
+  const result = await executePlan(plan, onStepUpdate);
+  try {
+    const log = JSON.parse(localStorage.getItem('axops_agent_log') || '[]');
+    if (log.length > 0 && log[0].plan_id === plan.id) {
+      log[0].autoExecuted = true;
+      log[0].mode = 'autonomous';
+      localStorage.setItem('axops_agent_log', JSON.stringify(log));
+    }
+  } catch {}
+  if (onComplete) onComplete(result);
+  return result;
 }
